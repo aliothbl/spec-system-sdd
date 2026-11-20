@@ -1,11 +1,5 @@
-# Index — features do projeto {{PROJECT_NAME}}
+# INDEX.md — mapa de features
 
-> **GERADO AUTOMATICAMENTE.** Edição manual PROIBIDA. Atualizado pelo CI em `scripts/generate-index.sh` a cada push na `main` que modifica `docs/features/**`.
->
-> Última regeneração: — (ainda não rodou — populado quando a primeira feature for criada)
+> GERADO — specctl index — NÃO EDITAR
 
----
-
-## Features
-
-_(nenhuma feature ainda — ao criar `docs/features/<nome>.md` e fazer merge, o CI regenera este índice automaticamente)_
+_(sem features ainda — este stub é substituído por `node scripts/specctl.mjs index`)_

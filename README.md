@@ -1,35 +1,37 @@
-# Spec System SDD v3
+# Spec System SDD v4
 
-A v3 instala um protocolo de desenvolvimento guiado por SPECs no Claude Code. Cada mudança tem um contrato com critérios de aceite, registro de progresso e memória de execução. As regras mantêm SPECs ativas nas branches de trabalho e registram o que foi entregue por área em `docs/features/`.
+Esta branch preserva o kit v4. O manifesto usa o schema `sdd-4.0` e o CLI desta versão informa `4.1.0`. O SDD organiza o trabalho da IA em SPECs com critérios de aceite, journal, verificação e fechamento. O `specctl` concentra as operações e os hooks do Claude Code carregam o contexto e aplicam as regras do projeto.
 
 ## Instalar no Claude Code
 
-Tenha Git, Claude Code e Bash disponíveis. No Windows, use Git Bash ou um ambiente WSL com o Claude Code instalado. O clone exige credenciais com acesso ao repositório. [Instalação do Claude Code](https://code.claude.com/docs/en/quickstart)
+Tenha Git, Claude Code e Node.js 18 ou superior no `PATH`. O clone exige credenciais com acesso ao repositório. [Instalação do Claude Code](https://code.claude.com/docs/en/quickstart)
 
-No Bash, clone esta branch fora do projeto de destino e copie a skill completa para o projeto.
+No Bash, clone a branch fora do projeto de destino e instale a pasta completa da skill na raiz do projeto.
 
 ```bash
 cd /caminho/para/a/pasta-de-trabalho
-git clone --branch v3 --single-branch https://github.com/danilo-pimentel/spec-system-sdd.git kit-sdd-v3
-kit_dir="$PWD/kit-sdd-v3"
+git clone --branch v4 --single-branch https://github.com/danilo-pimentel/spec-system-sdd.git kit-sdd-v4
+kit_dir="$PWD/kit-sdd-v4"
 cd /caminho/para/o/projeto
 mkdir -p .claude/skills
 cp -R "$kit_dir/spec-system-init" .claude/skills/
 claude
 ```
 
-Use um diretório `.claude/skills/spec-system-init` livre ao instalar. Se já houver outra versão com esse nome no destino, revise qual cópia deseja manter antes de substituir a pasta. No Claude Code, invoque `/spec-system-init` e solicite a inicialização nesta raiz. O agente inspeciona o projeto, apresenta os valores detectados e pede confirmação antes de instalar. A skill também orienta como mesclar um `CLAUDE.md` existente e verificar colisões em `docs/` e `scripts/`.
+Use um diretório `.claude/skills/spec-system-init` livre ao instalar. Se já houver outra versão com esse nome no destino, revise qual cópia deseja manter antes de substituir a pasta. Invoque `/spec-system-init` e peça para inicializar o SDD. A skill inspeciona os arquivos existentes e apresenta as opções de instalação, mescla, migração da v3 ou documentação de projeto existente. Confira os comandos de validação e as configurações que ela propõe antes de confirmar.
+
+Depois da instalação, revise `CLAUDE.md`, `AGENTS.md`, `docs/.spec-system.json` e `.claude/settings.json`. Reabra o Claude Code na raiz para iniciar uma sessão com a configuração do projeto. Use estes comandos para conferir o resultado.
+
+```bash
+node scripts/specctl.mjs --version
+node scripts/specctl.mjs index
+node scripts/specctl.mjs lint
+node scripts/specctl.mjs brief
+node scripts/specctl.mjs self-test
+```
 
 ## Usar o kit
 
-Após inicializar, confira `CLAUDE.md`, `docs/RULES.md` e `docs/INDEX.md`, que orientam a sessão. Para a primeira mudança, peça ao Claude Code uma SPEC com contrato e aceite, em uma branch de trabalho. Cada SPEC usa `main.md`, `state.md` e `memory.md`. Atualize os critérios de aceite durante o trabalho. Ao encerrar, registre o resultado em `docs/features/` e mova a SPEC para o destino apropriado conforme as regras.
+Peça uma SPEC para a mudança e confirme o porte e o contrato. Use `/spec` para consultar o fluxo no Claude Code. O `main.md` guarda escopo e critérios, e o `journal.md` registra estado e eventos de execução. Durante o trabalho, rode as verificações do projeto e registre evidências de acordo com o porte. Confira pendências com `node scripts/specctl.mjs close <id> --dry` antes de fechar a SPEC.
 
-Na raiz do projeto inicializado, rode os scripts auxiliares conforme o fluxo.
-
-```bash
-bash scripts/generate-index.sh
-bash scripts/lint-docs.sh
-bash scripts/audit-docs.sh
-```
-
-O [inicializador da v3](spec-system-init/SKILL.md) descreve a estrutura completa. O [guia da versão atual](https://github.com/danilo-pimentel/spec-system-sdd/tree/main) apresenta o fluxo da v4.1.
+O kit inclui templates, hooks e integração opcional com um pipeline PRD disponível no ambiente. As skills desse pipeline vêm embutidas a partir da branch `v4.1`. Veja o [inicializador da v4](spec-system-init/SKILL.md) e o [guia da versão atual](https://github.com/danilo-pimentel/spec-system-sdd/tree/main).

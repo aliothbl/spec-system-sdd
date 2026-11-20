@@ -1,89 +1,52 @@
 # CLAUDE.md — {{PROJECT_NAME}}
 
-> **Posicionamento obrigatório (regra dura do sistema SPEC-driven v3):** as seções `## AVISO IMPERATIVO PRA IA — LER PRIMEIRO` e `### Primeira ação obrigatória em QUALQUER sessão` SEMPRE ficam no INÍCIO deste arquivo, antes de qualquer outra seção. Skill `spec-system-init` (Step 7) garante isso em merge mode.
+> Regra dura de posicionamento: este bloco imperativo fica SEMPRE no TOPO, antes de qualquer outra seção. `specctl entrypoints` garante isso em regeneração/merge.
 
----
+## HARD BANS (TIER-0) — valem em TODA resposta
 
-## AVISO IMPERATIVO PRA IA — LER PRIMEIRO
+1. **R.6.2** — só o USUÁRIO aceita entrega incompleta, defere ou adia (qualquer "deixar pra depois", em QUALQUER momento) — NUNCA a IA por conta própria. PERGUNTE item a item (implementar agora / SPEC nova / aceitar gap), com citação do usuário.
+2. **LOG append-only** — NUNCA editar entradas antigas do `## LOG` do journal.md; correção = nova entrada.
+3. **`docs/active/` VAZIO em `main`** — SPEC ativa vive só em branch (CI bloqueia).
+4. **Temporários na pasta da SPEC** — `tmp/` (descartável) ou `evidence/` (persistente); sem SPEC → `.scratch/`. Nunca na raiz.
+5. **PROIBIDO varrer `scripts/specctl.mjs` ou re-ler `docs/rules/*` só para "garantir compliance"** — os gates dizem o que falta (`close <id> --dry`). Ler a rule DA TAREFA no momento do uso é o caminho certo, não viola este ban.
 
-Este é um projeto **SPEC-driven v3**. A documentação em `docs/` **não é para humanos** — é para VOCÊ (IA) ter contexto rico quando retomar, continuar ou mexer em qualquer parte do projeto.
+**R.9 — 1ª linha de TODA resposta = classificação:** `[continuidade: SPEC-x]` (trabalho de SPEC existente) | `[nova]` (demanda que muda comportamento/código do produto → exige SPEC) | `[livre]` (pergunta, análise, leitura, config de ferramenta, bump de harness — nada que altere o produto; sem SPEC). Ambíguo? PERGUNTE. `/spec` abre os fluxos guiados.
 
-- **PROIBIDO** ler arquivos Nível 1+ (features, SPECs) sem **confirmação explícita do usuário**.
-- **OBRIGATÓRIO** seguir o protocolo de escalação do [docs/RULES.md](docs/RULES.md) §4.
-- **PROIBIDO ABSOLUTO** decidir sozinho que um critério de aceite da SPEC é "OK pra deixar pra depois", "gap aceitável", "fica pra SPEC futura" ou qualquer racionalização equivalente. **Só o usuário pode aceitar entrega incompleta.** Ver [docs/RULES.md R.6.2](docs/RULES.md). Se IA precisar deferir algo, **PERGUNTA** o que fazer (implementar agora / mover pra SPEC nova / aceitar gap) — uma escolha por critério, todas com aprovação explícita.
+## Estrutura docs/
 
-### Primeira ação obrigatória em QUALQUER sessão
-
-Antes de qualquer código, qualquer resposta substantiva:
-
-1. Ler este `CLAUDE.md`
-2. Ler [docs/RULES.md](docs/RULES.md) — processo completo (fonte da verdade)
-3. Ler [docs/INDEX.md](docs/INDEX.md) — mapa de features
-4. Listar `docs/active/` (SPECs ativas na branch local — pode estar vazio em main)
-5. Confirmar por texto que leu:
-   > *"Li CLAUDE.md, docs/RULES.md v3, docs/INDEX.md (X features). Active local: [lista]. Como posso ajudar?"*
-6. Aguardar o prompt do usuário e seguir o protocolo de escalação do RULES §4.
-
-**Se houver SPEC ativa e o prompt conectar ao escopo dela:** pode ler `docs/active/SPEC-X/main.md` (contrato) após confirmar classificação. **NÃO** leia `state.md` ou `memory.md` da SPEC sem ANTES informar o usuário e pedir confirmação.
-
----
-
-## Descrição do projeto
-
-{{PROJECT_DESC}}
-
----
-
-## Stack
-
-**{{STACK}}**
+- `docs/RULES.md` — núcleo do processo (R.1–R.17); detalhe situacional em `docs/rules/*`
+- `docs/features/<area>.md` — memória viva por área · `docs/INDEX.md` — mapa (GERADO)
+- `docs/active|future|archive|discard/SPEC-<ts>-<slug>/` — main.md (contrato) + journal.md (SNAPSHOT + LOG)
+- `docs/claims/` — trabalho em voo visível em main · `docs/programs/` — DAGs de SPECs · `docs/PROGRAMS.md` (GERADO) + `docs/ROADMAP.md` — o que pegar a seguir (`specctl next`) · `docs/DEFERRED.md` (GERADO) — deferidos R.6.2
+- `docs/TAXONOMY.md` — áreas canônicas · `docs/ARCHITECTURE.md` — mapa região→feature
+- `docs/CONSTITUTION.md` — princípios · manifesto: `docs/.spec-system.json`
 
 ## Comandos
 
 {{DEV_COMMANDS}}
 
----
+Labels `test/typecheck/lint/dev/e2e` espelhados em `docs/.spec-system.json` — hooks, CI e `verify:` consomem de lá; não hardcode.
 
-## Processo SPEC-driven v3 — resumo
+## Skills e quando disparar
 
-Fonte da verdade: [docs/RULES.md](docs/RULES.md). Resumo operacional:
+| Situação | Skill |
+|---|---|
+| Implementar contra lib/framework/API externa cuja API atual você não domina | **Context7 MCP** — confirme assinatura/versão antes de codar (se indisponível: vendor docs / WebSearch) |
+| UI / frontend / estilização | frontend-design (se instalada) |
+| Porte G — fase PRD (se pipeline instalado) | cria-prd |
+| Fases seguintes (se instalado) | cria-techspec → criar-tasks → executar-task → executar-qa/review/bugfix |
 
-1. **Documentação é para a IA**, não para humanos. Única exceção: `main.md` de cada SPEC (contrato humano-validado).
-2. **Estrutura:**
-   - `docs/features/<area>.md` — estado VIVO de cada área do código
-   - `docs/active/SPEC-<id>/` — 3 arquivos: main (contrato), state (log), memory (cérebro vivo)
-   - `docs/future/`, `docs/archive/`, `docs/discard/` — ciclo de vida
-   - `docs/INDEX.md` — mapa de features (gerado pelo CI)
-3. **IDs de SPEC = timestamp** (`SPEC-YYYYMMDD-HHMM-slug`). Nunca sequencial. Nunca reutilizar.
-4. **Invariante:** `docs/active/` em `main` é sempre VAZIO. SPECs ativas vivem APENAS em branches.
-5. **Toda SPEC se vincula a 1+ feature.** Feature nova nasce com a SPEC que a introduz — **com confirmação explícita do usuário** (R.13).
-6. **Timestamps obrigatórios em TUDO:** checkbox, célula de status, decisão, atualização. Commit hash quando houver código.
-7. **Progresso de aceite em tempo real:** critério validado durante execução é marcado em `main.md` IMEDIATAMENTE (R.6.1) — não esperar fechamento.
-8. **Critério de aceite é binário** (R.6.2). IA NUNCA decide sozinha que um critério incompleto é "gap aceitável" — só o usuário pode aceitar, e SPEC com critério `[ ]` NÃO arquiva sem aprovação explícita item-a-item.
-9. **Ao concluir SPEC**, todas as features tocadas DEVEM ser atualizadas no mesmo PR (R.7). `audit-docs.sh` bloqueia PR sem isso. Snapshot do `state.md` é sobrescrito refletindo conclusão (zero `pendente`/`em progresso`/`bloqueado`).
-10. **Programas de SPECs** (sequências ordenadas) declaram `Depende de:` / `Bloqueia:` / `Ordem no programa:` no `main.md` (R.14). Relação Depende/Bloqueia é bidirecional consistente — auditada.
-11. **Classificação obrigatória de prompt:** continuidade / nova SPEC / livre. Em ambiguidade, PERGUNTAR — nunca assumir.
-12. **Protocolo de escalação de leitura:**
-    - Nível 0 (CLAUDE + RULES + INDEX): sempre, automático
-    - Nível 1 (features + main da SPEC): sob CONFIRMAÇÃO do dev
-    - Nível 2 (state + memory da SPEC): sob PERGUNTA EXPLÍCITA
-    - Nível 3 (archive de outras SPECs): só se raciocínio histórico for necessário
-13. **Append-only no `state.md`** (exceto snapshots de Status / Próximos passos / Bloqueios — esses são sobrescritos); sobrescrever no `memory.md`; atualizar `features/<X>.md` ao arquivar SPEC.
+## Mapa de referências — ler SÓ no momento do uso
+
+`docs/rules/`: formats (criar/editar artefato) · lifecycle (transições de ciclo de vida) · programs (DAG de SPECs) · interop (workspace externo / pipeline prd) · context (compactação/orçamentos) · retrieval (archive N3) · verification (`verify:` e gates) · team (claims/multi-dev/onboarding) · ci (gates de CI).
+
+<!-- projeto:início -->
+## Projeto
+
+{{PROJECT_DESC}}
+
+**Stack:** {{STACK}}
+<!-- projeto:fim -->
 
 ---
-
-## Convenções de código
-
-_(adicionar convenções específicas do projeto aqui conforme forem sendo estabelecidas: tamanho máximo de arquivo, estilo, imports, nomenclatura, comentários, testes, etc.)_
-
----
-
-## Arquitetura
-
-_(resumo rápido da arquitetura. Se crescer, mover para `docs/features/` quebrado por área.)_
-
----
-
-## Visão de produto
-
-_(resumo da visão. Se crescer, mover para arquivo dedicado.)_
+GERADO por `specctl entrypoints` — edite apenas o bloco projeto (entre marcadores).
