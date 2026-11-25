@@ -47,7 +47,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawnSync, execSync } from 'node:child_process';
 
-const VERSION = '4.1.1';
+const VERSION = '4.1.2';
 const SCHEMA = 'sdd-4.0';
 const SPEC_RE = /^SPEC-\d{8}-\d{4}-[a-z0-9][a-z0-9-]*$/;
 const SPEC_REF_RE = /\bSPEC-\d{8}-\d{4}(?:-[a-z0-9][a-z0-9-]*)?\b/g;
@@ -307,7 +307,25 @@ function getCriteria(pm) {
 const hasTs = (l) => TS_RE.test(l);
 const hasCommitEv = (l) => /commit\s*`[^`]+`/.test(l);
 const hasVerifyTag = (l) => /\bverify:/.test(l);
+// Comando do `| verify: \`cmd\``. Placeholder = token de template tipo `<comando>`/`<cmd>` (abre com letra, fecha com >);
+// redirecionamento/comparação de shell (`< arquivo`, `a<b`, `<(cmd)`) é comando REAL e roda.
+const VERIFY_CMD_RE = /\|\s*verify:\s*`([^`]+)`/;
+const VERIFY_PLACEHOLDER_RE = /<\p{L}[\p{L}\d _.-]*>/u;
+function verifyCmdOf(raw) {
+  const m = VERIFY_CMD_RE.exec(raw);
+  if (!m) return null;
+  return { cmd: m[1], runnable: !VERIFY_PLACEHOLDER_RE.test(m[1]) };
+}
 const hasEvidenceTag = (l) => /\bevidence:/.test(l);
+// [conclusão] VIGENTE: existe e vem depois da última reabertura (reopen). Sem isto, uma SPEC reaberta
+// fechava de novo na hora com a [conclusão] do fechamento anterior.
+const CONCLUSAO_HEAD_RE = /^## \d{4}-\d{2}-\d{2} \d{2}:\d{2} — (?:\[MARCO\] )?\[conclusão\]/gm;
+const REOPEN_HEAD_RE = /^## \d{4}-\d{2}-\d{2} \d{2}:\d{2} — \[nota\] Reabertura \(reopen\)/gm;
+function lastMatchIdx(re, txt) { let i = -1; for (const m of String(txt).matchAll(re)) i = m.index; return i; }
+function hasCurrentConclusao(jtxt) {
+  const c = lastMatchIdx(CONCLUSAO_HEAD_RE, jtxt);
+  return c >= 0 && c > lastMatchIdx(REOPEN_HEAD_RE, jtxt);
+}
 const ACEITO_RE = /\[aceito-incompleto:\s*"[^"]+"\s+\d{4}-\d{2}-\d{2} \d{2}:\d{2}\]/;
 
 function setField(txt, name, value) {
@@ -594,8 +612,9 @@ function cmdNew(pos, flags) {
     appendLog(dir, 'ativação', `SPEC criada e ativada (${owner}, branch ${branch || '—'}, base ${base})`);
     writeFile(claimPath(root, id), makeClaim({ id, title, owner, branch: branch || '—', base, features: flags.features ? splitList(flags.features).join(', ') : '—', ativada: now() }));
   }
-  out(`criada ${relOf(root, dir)} (${future ? 'rascunho em future/ — status draft' : 'ativa — claim registrado'})`);
+  out(`criada ${relOf(root, dir)} (${future ? 'rascunho em future/ — status draft' : 'ativa — claim registrado; NÃO rode activate (só serve para rascunhos de future/)'})`);
   if (future) out(`ative com: node scripts/specctl.mjs activate ${id}`);
+  else printClaimPublish(root, id, flags.base || detectBaseBranch(root, branch), branch);
   out('preencha Objetivo/Escopo/Critério de aceite em main.md — formatos: docs/rules/formats.md');
   out(JIT_FACTS); // C2 — bloco estável (≤900B, sem NOW): permitido SÓ em new/activate/close--dry
 }
@@ -603,6 +622,8 @@ function cmdNew(pos, flags) {
 function cmdActivate(pos, flags) {
   const root = requireRoot();
   const spec = findSpec(root, pos[0]);
+  // `new` sem --future já ativa: activate repetido é no-op informativo, não erro (agentes seguiam docs antigas new+activate)
+  if (spec.phase === 'active') { out(`${spec.id} já está ativa (new sem --future já ativa e registra o claim) — nada a fazer`); return; }
   if (spec.phase !== 'future') die(`activate: ${spec.id} está em ${spec.phase}/ — só rascunhos em future/ podem ser ativados (pausadas: use resume)`);
   const pm = parseMain(read(P(spec.dir, 'main.md')));
   if (pm.fields.Status === 'paused') die(`${spec.id} está pausada — caminho correto: node scripts/specctl.mjs resume ${spec.id}`);
@@ -626,16 +647,21 @@ function cmdActivate(pos, flags) {
     features: pm2.fields.Features || '—',
     ativada: now(),
   }));
+  cmdIndex({ quiet: true }); // pasta mudou de future/ → active/: DEFERRED/INDEX citam o caminho
   out(`ativada: docs/active/${spec.id} (claim: docs/claims/${spec.id}.md)`);
-  // team: multi — o claim precisa correr NA FRENTE do trabalho (visibilidade p/ os outros devs, R.11/team.md)
-  if (manifest(root).team === 'multi') {
-    out(`— team: multi — PUBLIQUE o claim na ${base} agora (PR trivial, diff só do claim):`);
-    out(`  git checkout -b claim/${spec.id} ${base}`);
-    out(`  git checkout ${branch || '<branch>'} -- docs/claims/${spec.id}.md`);
-    out(`  git commit -m "docs: claim ${spec.id} (R.11)" && git push -u origin claim/${spec.id}`);
-    out(`  abra o PR para ${base} (auto-merge se permitido) e volte: git checkout ${branch || '<branch>'}`);
-  }
+  printClaimPublish(root, spec.id, base, branch);
   out(JIT_FACTS); // C2 — bloco estável (≤900B, sem NOW): permitido SÓ em new/activate/close--dry
+}
+
+// team: multi — o claim precisa correr NA FRENTE do trabalho (visibilidade p/ os outros devs, R.11/team.md).
+// Chamado por toda via que cria claim de SPEC recém-ativada (new ativo e activate).
+function printClaimPublish(root, id, base, branch) {
+  if (manifest(root).team !== 'multi') return;
+  out(`— team: multi — PUBLIQUE o claim na ${base} agora (PR trivial, diff só do claim):`);
+  out(`  git checkout -b claim/${id} ${base}`);
+  out(`  git checkout ${branch || '<branch>'} -- docs/claims/${id}.md`);
+  out(`  git commit -m "docs: claim ${id} (R.11)" && git push -u origin claim/${id}`);
+  out(`  abra o PR para ${base} (auto-merge se permitido) e volte: git checkout ${branch || '<branch>'}`);
 }
 
 function cmdPause(pos, flags) {
@@ -651,6 +677,7 @@ function cmdPause(pos, flags) {
   appendLog(spec.dir, 'nota', `Pausada: ${motivo}`);
   const dst = moveSpec(spec, root, 'future');
   removeClaim(root, spec.id);
+  cmdIndex({ quiet: true }); // pasta mudou de active/ → future/: DEFERRED/INDEX citam o caminho
   out(`pausada: docs/future/${spec.id} (claim removido). Retome com: node scripts/specctl.mjs resume ${spec.id}`);
   void dst;
 }
@@ -677,9 +704,11 @@ function cmdResume(pos) {
     title: (pm2.lines[0] || '').replace(/^#\s*[^:]*:\s*/, '') || spec.id,
     owner: pm2.fields.Owner || '@owner',
     branch: branch || '—',
+    base: detectBaseBranch(root, branch),
     features: pm2.fields.Features || '—',
     ativada: now(),
   }));
+  cmdIndex({ quiet: true }); // pasta mudou de future/ → active/: DEFERRED/INDEX citam o caminho
   out(`retomada: docs/active/${spec.id} (claim recriado)`);
 }
 
@@ -697,8 +726,13 @@ function cmdReopen(pos, flags) {
   txt = setField(txt, 'Status', 'active');
   if (/^\*\*Reaberta em:\*\*/m.test(txt)) txt = setField(txt, 'Reaberta em', `${now()} — ${motivo}`);
   else txt = txt.replace(/^(\*\*Criada:\*\*.*)$/m, `$1\n**Reaberta em:** ${now()} — ${motivo}`);
+  // fechamento anterior deixa de valer: Concluída/Commit final voltam a "—" e o digest (gerado) é descartado —
+  // o próximo close re-estampa e re-gera. A [conclusão] antiga fica no LOG (append-only), mas só conta a posterior à reabertura.
+  if (/^\*\*Concluída:\*\*/m.test(txt)) txt = setField(txt, 'Concluída', '—');
+  if (/^\*\*Commit final:\*\*/m.test(txt)) txt = setField(txt, 'Commit final', '—');
   writeFile(P(spec.dir, 'main.md'), txt);
   const dst = moveSpec(spec, root, 'active');
+  fs.rmSync(P(dst, 'digest.md'), { force: true });
   appendLog(dst, 'nota', `Reabertura (reopen): ${motivo}`);
   const pm2 = parseMain(read(P(dst, 'main.md')));
   writeFile(claimPath(root, spec.id), makeClaim({
@@ -706,6 +740,7 @@ function cmdReopen(pos, flags) {
     title: (pm2.lines[0] || '').replace(/^#\s*[^:]*:\s*/, '') || spec.id,
     owner: pm2.fields.Owner || '@owner',
     branch: branch || '—',
+    base: detectBaseBranch(root, branch),
     features: pm2.fields.Features || '—',
     ativada: now(),
   }));
@@ -750,7 +785,7 @@ function cmdArchive(pos) {
   if (!exists(jp)) pend.push('journal.md ausente');
   else {
     const jtxt = read(jp);
-    if (!/^## \d{4}-\d{2}-\d{2} \d{2}:\d{2} — (?:\[MARCO\] )?\[conclusão\]/m.test(jtxt)) pend.push('entrada [conclusão] ausente no LOG do journal');
+    if (!hasCurrentConclusao(norm(jtxt))) pend.push('entrada [conclusão] ausente no LOG do journal (após uma reabertura, é preciso uma [conclusão] nova)');
     // SNAPSHOT ainda com placeholders do template = não reflete a conclusão (e o digest gerado herdaria o lixo)
     const snapEnd = jtxt.search(/^## LOG\b/m);
     const snap = snapEnd >= 0 ? jtxt.slice(0, snapEnd) : jtxt;
@@ -1827,8 +1862,9 @@ function cmdVerify(pos, flags) {
   const crit = getCriteria(pm);
   if (!crit) die(`${spec.id}: sem seção "## Critério de aceite"`);
   const targets = crit.filter((c) => {
-    const m = /\|\s*verify:\s*`([^`]+)`/.exec(c.raw);
-    if (!m || m[1].includes('<')) return false;
+    const v = verifyCmdOf(c.raw);
+    if (!v || !v.runnable) return false;
+    if (ACEITO_RE.test(c.raw)) return false; // R.6.2: aceito-incompleto pelo usuário NÃO roda (nem com --all) — senão o close abortava num critério já decidido
     return flags.all ? true : !c.checked;
   });
   if (!targets.length) { out('nada a verificar — nenhum critério pendente com `verify:` executável (use --all para reverificar)'); process.exit(0); }
@@ -1837,7 +1873,7 @@ function cmdVerify(pos, flags) {
   let fails = 0;
   const summary = [];
   for (const c of targets) {
-    const cmd = /\|\s*verify:\s*`([^`]+)`/.exec(c.raw)[1];
+    const cmd = verifyCmdOf(c.raw).cmd;
     process.stdout.write(`verify: ${truncate(c.text, 60)}\n  $ ${cmd}\n`);
     let ok = false, detail = '';
     try { execSync(cmd, { cwd: root, stdio: 'pipe', timeout: 300000 }); ok = true; }
@@ -2157,8 +2193,8 @@ function closeStage(root, spec) {
   crit.forEach((c, i) => {
     const n = i + 1;
     if (hasVerifyTag(c.raw)) {
-      const m = /\|\s*verify:\s*`([^`]+)`/.exec(c.raw);
-      const runnable = m && !m[1].includes('<');
+      const v = verifyCmdOf(c.raw);
+      const runnable = !!(v && v.runnable);
       if (!c.checked && !ACEITO_RE.test(c.raw)) {
         if (runnable) { verifyPending++; autos.push(`critério ${n} com verify: pendente — será executado no close`); }
         else blockers.push(`critério ${n} com verify: placeholder — preencha o comando real (ou fluxo R.6.2): "${truncate(c.text, 50)}"`);
@@ -2171,8 +2207,8 @@ function closeStage(root, spec) {
   });
   const jp = P(spec.dir, 'journal.md');
   const jtxt = exists(jp) ? norm(readSafe(jp)) : '';
-  if (!jtxt || !/^## \d{4}-\d{2}-\d{2} \d{2}:\d{2} — (?:\[MARCO\] )?\[conclusão\]/m.test(jtxt)) {
-    blockers.push(`[conclusão] ausente no LOG — rota: node scripts/specctl.mjs log ${spec.id} conclusão "o que foi entregue"`);
+  if (!jtxt || !hasCurrentConclusao(jtxt)) {
+    blockers.push(`[conclusão] ausente no LOG (ou anterior à última reabertura) — rota: node scripts/specctl.mjs log ${spec.id} conclusão "o que foi entregue"`);
   }
   // SNAPSHOT ainda em placeholder do template = não reflete a conclusão; o digest gerado herdaria o lixo ("Entregue: nada feito ainda")
   const snapEnd = jtxt.search(/^## LOG\b/m);
@@ -2498,8 +2534,16 @@ function cmdGuardRead() {
 }
 
 const TEMP_EXTS = ['.png', '.tmp', '.log'];
-const TEMP_PREFIX = /^(dump|trace)/i;
-function isTempName(base) { return TEMP_EXTS.includes(path.extname(base).toLowerCase()) || TEMP_PREFIX.test(base); }
+// `dump.sql`, `trace-1.json`, `dump_2.txt` — mas NÃO `tracer.ts`/`dumpSchema.ts` (prefixo exige separador/dígito/fim)
+const TEMP_PREFIX = /^(dump|trace)(?:[._-]|\d|$)/i;
+const CODE_EXTS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.go', '.rs', '.java', '.kt', '.rb', '.php', '.cs', '.swift', '.c', '.h', '.cpp', '.vue', '.svelte'];
+function isTempName(base) {
+  const ext = path.extname(base).toLowerCase();
+  if (CODE_EXTS.includes(ext)) return false;
+  return TEMP_EXTS.includes(ext) || TEMP_PREFIX.test(base);
+}
+// R.12 mira o lixo solto: raiz do repo e docs/. Assets/logs dentro das pastas do projeto (public/logo.png, logs/app.log) são legítimos.
+function inTempGuardScope(rel) { return !rel.includes('/') || rel.startsWith('docs/'); }
 function inAllowedTempDir(rel) {
   return rel.includes('/tmp/') || rel.startsWith('tmp/') ||
     rel.includes('/evidence/') || rel.startsWith('evidence/') ||
@@ -2516,6 +2560,18 @@ function newLogHeadings(newText, oldText) {
     if (!ot.includes(line)) found.push(line);
   }
   return found;
+}
+// trecho imutável do LOG: de "## LOG" até o início da ÚLTIMA entrada (a última e o SNAPSHOT continuam editáveis).
+// '' quando não há LOG ou só há uma entrada.
+function frozenLogRegion(txt) {
+  const logIdx = txt.search(/^## LOG\b/m);
+  if (logIdx < 0) return '';
+  const headRe = /^## \d{4}-\d{2}-\d{2} \d{2}:\d{2} — .*$/gm;
+  let lastIdx = -1, m;
+  while ((m = headRe.exec(txt)) !== null) { if (m.index > logIdx) lastIdx = m.index; }
+  if (lastIdx < 0) return '';
+  const region = txt.slice(logIdx, lastIdx);
+  return /^## \d{4}-\d{2}-\d{2} \d{2}:\d{2} — /m.test(region) ? region : '';
 }
 // ---- sinal de contexto (doutrina "quando compactar" de rules/context.md virando sinal — v4.1.1) ----
 // Lê o último `usage` do transcript (só o tail, barato) e, quando o contexto REAL cruza o limiar
@@ -2600,7 +2656,7 @@ function cmdGuardWrite() {
   if (['docs/INDEX.md', 'docs/ARCHIVE-INDEX.md', 'docs/PROGRAMS.md', 'docs/DEFERRED.md'].includes(rel)) {
     deny(`[guard-write] BLOQUEADO: ${rel} é GERADO. Caminho correto: edite a fonte (features/TAXONOMY/programs/critérios) e rode: node scripts/specctl.mjs index`);
   }
-  if (isTempName(base) && !inAllowedTempDir(rel)) {
+  if (isTempName(base) && inTempGuardScope(rel) && !inAllowedTempDir(rel)) {
     const act = activeSpecs(root);
     const hint = act.length ? `docs/active/${act[0].id}` : 'docs/active/<SPEC>';
     deny(`[guard-write] BLOQUEADO (R.12): '${base}' parece temporário/artefato fora de área permitida. Caminho correto: ${hint}/tmp/ (descartável) ou ${hint}/evidence/ (persistente); sem SPEC ativa: .scratch/.`);
@@ -2651,6 +2707,15 @@ function cmdGuardWrite() {
       const sid = (rel.match(/docs\/active\/(SPEC-[^/]+)/) || [])[1] || '<id>';
       deny(`[guard-write] BLOQUEADO (v4.1 anti-spoofing): só specctl verify grava evidência "verify: exit 0" em critério — a ferramenta roda o comando e carimba na hora. Trecho: '${truncate(line, 60)}'.\n` +
         `Caminho correto: node scripts/specctl.mjs verify ${sid}  (critério manual, sem comando: node scripts/specctl.mjs check ${sid} <n> --evidence "...").`);
+    }
+  }
+  // Write (arquivo inteiro) no journal: as entradas do LOG anteriores à última precisam sobreviver BYTE A BYTE.
+  // Sem isto, Write reescrevia o corpo de entradas antigas que o Edit nega (furo no append-only TIER-0).
+  if (base === 'journal.md' && tool === 'Write') {
+    const txt = norm(readSafe(path.resolve(fp)));
+    const frozen = frozenLogRegion(txt);
+    if (frozen && !norm(String(ti.content || '')).includes(frozen)) {
+      deny(`[guard-write] BLOQUEADO (TIER-0): o LOG do journal é append-only — este Write altera ou remove entradas antigas do ## LOG. Caminho correto: edite o SNAPSHOT/última entrada com Edit e adicione entradas novas via node scripts/specctl.mjs log <id> <tipo> "título".`);
     }
   }
   if (base === 'journal.md' && tool !== 'Write') {
@@ -2723,8 +2788,9 @@ function cmdStampCheck() {
     if (t && Math.abs(t.getTime() - Date.now()) > 24 * 3600 * 1000) drift.push(m[0]);
   }
   if (drift.length) out(`[stamp-check] AVISO (R.6): timestamp(s) fora de ±24h do relógio (NOW=${now()}): ${drift.slice(0, 3).join(', ')} — use {{NOW}} ou o NOW injetado, nunca invente data.`);
-  // 3) secret-scan no arquivo tocado (deny-feedback = exit 2)
-  const hits = scanSecrets(txt);
+  // 3) secret-scan no arquivo tocado (deny-feedback = exit 2) — escopo R.15: docs/ e entrypoints.
+  // Código do projeto fica de fora: URL local tipo postgres://postgres:postgres@localhost bloqueava TODA edição.
+  const hits = eligible ? scanSecrets(txt) : [];
   if (hits.length) {
     const h = hits[0];
     deny(`[stamp-check] SEGREDO detectado (${h.tipo}, linha ${h.line}) em ${rel}. R.15: docs NUNCA guardam segredos — substitua AGORA por <REDACTED:${h.tipo}> e ROTACIONE a credencial exposta (exceção auditada ao append-only cobre a remediação).`);
@@ -2740,7 +2806,8 @@ function cmdSessionClose() {
   const act = activeSpecs(root);
   if (!act.length) process.exit(0);
   // spawnSync direto: o stdout NÃO pode ser trimado (o 1º caractere de status pode ser espaço)
-  const st = spawnSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' });
+  // -uall: pasta nova não-rastreada (SPEC recém-criada) aparece arquivo a arquivo — senão o journal.md dela some numa linha "?? dir/"
+  const st = spawnSync('git', ['status', '--porcelain', '-uall'], { cwd: root, encoding: 'utf8' });
   if (st.error || st.status !== 0) {
     process.stderr.write(`[session-close] AVISO: git status falhou: ${(st.stderr || (st.error && st.error.message) || '').trim()} — verificação de journal pulada\n`);
     process.exit(0);
@@ -3622,6 +3689,117 @@ x
     expectRun(ok, 0, 'suite PASS', 'close com suíte passando');
     expect(isDir(P(root, 'docs', 'archive', id)), 'SPEC deveria estar em archive/');
   });
+  // ---- v4.1.2 — regressões ----
+  fixture('new-ja-ativa', () => {
+    // docs antigas mandavam new + activate; activate em SPEC já ativa era erro (exit 1)
+    const root = stBase(tmp, 'new-ativa');
+    if (!stGitCommit(root)) return;
+    expect(stFeatureBranch(root), 'checkout feature/x falhou');
+    const man = JSON.parse(read(P(root, 'docs', '.spec-system.json')));
+    man.team = 'multi';
+    writeFile(P(root, 'docs', '.spec-system.json'), JSON.stringify(man, null, 2) + '\n');
+    const rn = runCli(root, ['new', 'demo', '--porte', 'P']);
+    expectRun(rn, 0, 'NÃO rode activate', 'new ativo avisa que activate é desnecessário');
+    expect(rn.out.includes('PUBLIQUE o claim'), `team multi: new ativo deve imprimir a publicação do claim — saída: ${truncate(rn.out, 400)}`);
+    const id = (/(SPEC-\d{8}-\d{4}-demo)/.exec(rn.out) || [])[1];
+    expectRun(runCli(root, ['activate', id]), 0, 'já está ativa', 'activate em SPEC ativa é no-op');
+  });
+  fixture('close-ignora-verify-aceito', () => {
+    // critério aceito-incompleto pelo usuário NÃO roda verify: no close (antes: verify falhava e abortava o close)
+    const root = stBase(tmp, 'close-aceito');
+    const id = stActiveSpec(root, { criterios: [
+      '- [ ] roda | verify: `node -e "process.exit(0)"`',
+      '- [ ] parte adiada [aceito-incompleto: "pode ficar pra depois" 2026-06-01 10:00] | verify: `node -e "process.exit(1)"`',
+    ] });
+    writeFile(P(root, 'docs', 'active', id, 'journal.md'), stJournal(ST_ACT, { conclusao: true, snapshotDone: true }));
+    writeFile(P(root, 'docs', 'features', 'core.md'), stFeatureCore(`SPEC-${ST_ACT}`));
+    expect(stGitCommit(root), 'git commit indisponível na fixture');
+    const r = runCli(root, ['close', id]);
+    expectRun(r, 0, 'atestado', 'close com critério aceito (verify falharia) deve fechar');
+    expect(isDir(P(root, 'docs', 'archive', id)), 'SPEC deveria estar em archive/');
+  });
+  fixture('verify-comando-com-menor', () => {
+    // `<` de shell não é placeholder; `<comando>` continua placeholder
+    const root = stBase(tmp, 'verify-menor');
+    const id = stActiveSpec(root, { criterios: [
+      '- [ ] compara | verify: `node -e "process.exit(1<2?0:1)"`',
+      '- [ ] falta comando | verify: `<comando>`',
+    ] });
+    writeFile(P(root, 'docs', 'features', 'core.md'), stFeatureCore(''));
+    expect(stGitCommit(root), 'git commit indisponível na fixture');
+    const v = runCli(root, ['verify', id]);
+    expectRun(v, 0, 'PASS', 'verify roda comando com <');
+    const dry = runCli(root, ['close', id, '--dry']);
+    expect(dry.out.includes('verify: placeholder') && dry.out.includes('critério 2'), `<comando> deveria seguir placeholder — saída: ${truncate(dry.out, 400)}`);
+    expect(!dry.out.includes('critério 1 com verify: placeholder'), 'comando real com < tratado como placeholder');
+  });
+  fixture('guard-write-log-via-write', () => {
+    // Write do arquivo inteiro não pode reescrever entradas antigas do LOG (Edit já era negado)
+    const root = stBase(tmp, 'gw-log-write');
+    stFeatureBranch(root);
+    const id = stActiveSpec(root);
+    const jp = P(root, 'docs', 'active', id, 'journal.md');
+    writeFile(jp, stJournal(ST_ACT, { conclusao: true }));
+    const cur = read(jp);
+    const tamper = JSON.stringify({ tool_name: 'Write', tool_input: { file_path: jp, content: cur.replace('## 2026-01-10 10:05 — [ativação] SPEC ativada\n', '') } }); // apaga entrada antiga: sem heading novo, o gate do Escriba não pega
+    expectRun(runCli(root, ['guard-write'], tamper), 2, 'append-only', 'Write que altera entrada antiga é negado');
+    const lastEdit = JSON.stringify({ tool_name: 'Write', tool_input: { file_path: jp, content: cur.replace('[conclusão] Entregue\n', '[conclusão] Entregue\n\ncorpo acrescentado na última entrada\n') } });
+    expectRun(runCli(root, ['guard-write'], lastEdit), 0, null, 'Write que só mexe na última entrada passa');
+    const snap = JSON.stringify({ tool_name: 'Write', tool_input: { file_path: jp, content: cur.replace('início — nada feito ainda', 'avancei') } });
+    expectRun(runCli(root, ['guard-write'], snap), 0, null, 'Write que só mexe no SNAPSHOT passa');
+  });
+  fixture('guard-write-temp-escopo', () => {
+    const root = stBase(tmp, 'gw-temp');
+    const gw = (rel) => runCli(root, ['guard-write'], JSON.stringify({ tool_name: 'Write', tool_input: { file_path: P(root, ...rel.split('/')), content: 'x' } }));
+    expectRun(gw('src/tracer.ts'), 0, null, 'tracer.ts é código, não temporário');
+    expectRun(gw('dumpSchema.ts'), 0, null, 'dumpSchema.ts na raiz é código');
+    expectRun(gw('public/logo.png'), 0, null, 'asset dentro de pasta do projeto é legítimo');
+    expectRun(gw('dump.sql'), 2, 'R.12', 'dump.sql solto na raiz é negado');
+    expectRun(gw('shot.png'), 2, 'R.12', 'png solto na raiz é negado');
+    expectRun(gw('docs/trace-1.json'), 2, 'R.12', 'trace em docs/ é negado');
+  });
+  fixture('stamp-check-segredo-escopo', () => {
+    // R.15 vale para docs/ e entrypoints; código com credencial de dev local não bloqueia toda edição
+    const root = stBase(tmp, 'sc-escopo');
+    writeFile(P(root, 'src', 'db.ts'), 'export const url = "AKIAIOSFODNN7EXAMPLE";\n');
+    const code = JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: P(root, 'src', 'db.ts'), old_string: 'x', new_string: 'y' } });
+    expectRun(runCli(root, ['stamp-check'], code), 0, null, 'stamp-check ignora código fora de docs/');
+    writeFile(P(root, 'docs', 'notas.md'), 'chave AKIAIOSFODNN7EXAMPLE\n');
+    const doc = JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: P(root, 'docs', 'notas.md'), old_string: 'x', new_string: 'y' } });
+    expectRun(runCli(root, ['stamp-check'], doc), 2, 'R.15', 'stamp-check nega segredo em docs/');
+  });
+  fixture('flag-desconhecida', () => {
+    const root = stBase(tmp, 'flag-typo');
+    const id = stActiveSpec(root);
+    const r = runCli(root, ['close', id, '--dyr']);
+    expectRun(r, 1, 'flag desconhecida --dyr', 'flag com typo é erro');
+    expect(r.out.includes('--dry'), `sem sugestão --dry — saída: ${truncate(r.out, 200)}`);
+    expect(isDir(P(root, 'docs', 'active', id)), 'close com flag errada não pode ter rodado');
+    expectRun(runCli(root, ['--help']), 0, 'ciclo de vida', '--help sai com 0');
+  });
+  fixture('session-close-spec-nova', () => {
+    // SPEC recém-criada (pasta não-rastreada) + código alterado: o journal novo conta como atualizado
+    const root = stBase(tmp, 'sc-nova');
+    if (!stGitCommit(root)) return;
+    expect(stFeatureBranch(root), 'checkout feature/x falhou');
+    expectRun(runCli(root, ['new', 'demo', '--porte', 'P']), 0, 'criada', 'new');
+    writeFile(P(root, 'src', 'a.ts'), 'export {};\n');
+    const r = runCli(root, ['session-close'], '{}');
+    expect(r.code === 0 && !r.out.includes('"block"'), `session-close bloqueou com journal novo — saída: ${truncate(r.out, 300)}`);
+  });
+  fixture('reopen-exige-nova-conclusao', () => {
+    const root = stBase(tmp, 'reopen-conc');
+    stFeatureBranch(root);
+    const id = stArchiveSpec(root);
+    writeFile(P(root, 'docs', 'features', 'core.md'), stFeatureCore(`SPEC-${ST_ARCH}`));
+    expectRun(runCli(root, ['reopen', id, '--motivo', 'faltou o critério 2']), 0, 'reaberta', 'reopen');
+    const dir = P(root, 'docs', 'active', id);
+    const main = read(P(dir, 'main.md'));
+    expect(/^\*\*Concluída:\*\* —$/m.test(main) && /^\*\*Commit final:\*\* —$/m.test(main), `Concluída/Commit final não zerados — ${truncate(main, 400)}`);
+    expect(!exists(P(dir, 'digest.md')), 'digest antigo deveria ter sido descartado');
+    const dry = runCli(root, ['close', id, '--dry']);
+    expectRun(dry, 1, 'anterior à última reabertura', 'close exige [conclusão] nova após reopen');
+  });
 
   out(`== specctl self-test (v${VERSION}) ==`);
   let pass = 0;
@@ -3639,15 +3817,33 @@ x
 // ---------------------------------------------------------------- dispatch
 
 const VALUE_FLAGS = ['base', 'motivo', 'porte', 'owner', 'features', 'program', 'workspace', 'branch', 'evidence', 'body-file', 'file', 'cita', 'agent'];
+const BOOL_FLAGS = ['all', 'compact', 'deps', 'dry', 'fix', 'force', 'future', 'main-gate', 'pr', 'stdin', 'strict', 'target-main'];
+// flag desconhecida = erro: antes `close <id> --dyr` era aceito em silêncio e rodava um close REAL
+function checkFlagName(name) {
+  if (VALUE_FLAGS.includes(name) || BOOL_FLAGS.includes(name)) return;
+  const all = [...VALUE_FLAGS, ...BOOL_FLAGS];
+  const near = all.filter((f) => editDistance(f, name) <= 2);
+  die(`flag desconhecida --${name}${near.length ? ` — quis dizer --${near[0]}?` : ''} (veja: node scripts/specctl.mjs --help)`);
+}
+function editDistance(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  }
+  return d[a.length][b.length];
+}
 function parseArgs(argv) {
   const flags = {}; const pos = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
+    if (a === '--help' || a === '--version') { pos.push(a); continue; }
     if (a.startsWith('--')) {
       const eq = a.indexOf('=');
-      if (eq > -1) flags[a.slice(2, eq)] = a.slice(eq + 1);
+      if (eq > -1) { checkFlagName(a.slice(2, eq)); flags[a.slice(2, eq)] = a.slice(eq + 1); }
       else {
         const name = a.slice(2);
+        checkFlagName(name);
         if (VALUE_FLAGS.includes(name)) {
           flags[name] = argv[++i];
           if (flags[name] === undefined) die(`--${name} exige valor`);
@@ -3657,8 +3853,8 @@ function parseArgs(argv) {
   }
   return { flags, pos };
 }
-function usage() {
-  process.stderr.write(`specctl v${VERSION} (${SCHEMA}) — CLI única do sistema SPEC (SDD v4)
+function usage(code = 1) {
+  (code ? process.stderr : process.stdout).write(`specctl v${VERSION} (${SCHEMA}) — CLI única do sistema SPEC (SDD v4)
 uso: node scripts/specctl.mjs <comando> [args]
 
 ciclo de vida:  init · new · activate · pause · resume · reopen <id> --motivo "..." · close <id> [--dry] · archive · discard
@@ -3671,7 +3867,7 @@ validação:      lint [--strict] [--target-main] · audit [--pr --base <sha>] [
 contexto:       brief [--compact] [--agent <id>] · capsule · stamp · index · next [--program <slug>] · entrypoints · adopt-workspace <id>
 hooks:          guard-read · guard-write · stamp-check · session-close
 `);
-  process.exit(1);
+  process.exit(code);
 }
 
 const [, , cmd, ...rest] = process.argv;
@@ -3709,6 +3905,7 @@ try {
     case 'entrypoints': cmdEntrypoints(); break;
     case 'self-test': cmdSelfTest(); break;
     case '--version': case 'version': out(`specctl ${VERSION} (${SCHEMA})`); break;
+    case '--help': case 'help': usage(0); break;
     default: usage();
   }
 } catch (e) {

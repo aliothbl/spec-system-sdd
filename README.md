@@ -14,7 +14,20 @@ O Claude Code fornece a sessão, as ferramentas e as skills. O kit adiciona as r
 | [`v4`](https://github.com/danilo-pimentel/spec-system-sdd/tree/v4) | Versão 4 original, com `specctl.mjs`, journal e hooks. |
 | [`v3`](https://github.com/danilo-pimentel/spec-system-sdd/tree/v3) | Versão 3, com `state.md`, `memory.md` e scripts de manutenção em shell. |
 
-A linha 4.1 usa o schema de manifesto `sdd-4.0`. A CLI do pacote reporta `4.1.1` e usa esse valor como `template_revision` ao criar o manifesto. A abertura de `SKILL.md` conserva a referência histórica a `4.1.0`.
+A linha 4.1 usa o schema de manifesto `sdd-4.0`. A CLI do pacote reporta `4.1.2` e usa esse valor como `template_revision` ao criar o manifesto. Os guards da 4.1 são ativados em qualquer manifesto com `template_revision` igual ou superior a `4.1.0`.
+
+### Atualizar um projeto da 4.1.1 para a 4.1.2
+
+A 4.1.2 corrige bugs sem mudar o formato dos documentos. Na raiz do projeto, com o kit clonado ao lado (`../spec-system-sdd`):
+
+1. Copie `spec-system-init/templates/scripts/specctl.mjs` para `scripts/specctl.mjs`.
+2. Copie as pastas de `spec-system-init/templates/skills/` para `.claude/skills/`, substituindo as oito skills do pipeline.
+3. Copie `templates/rules/lifecycle.md` para `docs/rules/` e `templates/commands/spec.md` para `.claude/commands/`. Se você personalizou esses arquivos, compare antes de substituir.
+4. Em `.claude/settings.json`, troque `node scripts/specctl.mjs` por `node "$CLAUDE_PROJECT_DIR/scripts/specctl.mjs"` nos hooks e acrescente `clear` ao matcher `startup|resume` do `SessionStart`.
+5. Em `docs/.spec-system.json`, ajuste `template_revision` para `4.1.2`.
+6. Rode `node scripts/specctl.mjs index` e `node scripts/specctl.mjs lint`.
+
+Principais correções: `new` já ativa a SPEC e `activate` repetido deixou de falhar; `close` não roda mais o `verify:` de critérios aceitos como incompletos; comandos `verify:` com `<` deixaram de ser tratados como placeholder; `Write` não consegue mais reescrever entradas antigas do LOG; o guard de temporários não bloqueia mais arquivos como `tracer.ts` ou `public/logo.png`; a busca de segredos pós-edição se limita a `docs/` e aos entrypoints; flags desconhecidas viram erro; `reopen` exige nova `[conclusão]` e descarta o digest anterior; a skill de QA usa `check`/`verify` em vez de marcar critérios à mão.
 
 ## Instalação no Claude Code
 
@@ -125,7 +138,7 @@ claude
 ```
 
 1. **Defina a entrega.** O Claude propõe a área da taxonomia, o porte e o responsável no mesmo checkpoint. Revise a minuta de `main.md` no modo de planejamento. Aprovar esse plano valida o contrato.
-2. **Ative a SPEC.** A sessão usa `specctl new` e `activate` para criar o ID, registrar a ativação e abrir o claim. O trabalho ativo fica em `docs/active/SPEC-.../` na branch de trabalho.
+2. **Ative a SPEC.** A sessão usa `specctl new` para criar o ID, registrar a ativação e abrir o claim. `activate` só é usado para ativar um rascunho criado antes com `new --future`. O trabalho ativo fica em `docs/active/SPEC-.../` na branch de trabalho.
 3. **Repita implementação, validação e registro.** Avance por critério ou tarefa, rode as verificações, corrija falhas e registre resultados no journal na hora. O `SNAPSHOT` contém fase, estado e próximo passo. O `LOG` guarda eventos em ordem, com novas entradas via `specctl log`. Para retomar em outra sessão, indique a SPEC e siga o `brief` e o journal.
 4. **Valide e encerre.** Use `/spec fechar` para revisar as pendências de `close <id> --dry`. Em porte P, `check <id> <n>` registra evidência de um critério sem comando `verify:`. Quando houver `verify:`, `specctl verify <id>` roda o comando e carimba os critérios que passaram. Pendências de aceite exigem decisão explícita do usuário por item e registro da resposta.
 5. **Arquive com evidência.** O `close` executa as verificações pendentes e a suíte `commands.test` quando configurada, prepara o `digest.md`, arquiva a SPEC, remove o claim e regenera os índices. Se uma verificação ou a suíte falhar, a SPEC fica ativa. Critérios já verificados conservam a evidência para a próxima tentativa. Ao arquivar, o comando imprime um atestado e os próximos passos de Git para decisão do usuário. Os commits feitos sob a SPEC levam o trailer `Spec: SPEC-<id>`.

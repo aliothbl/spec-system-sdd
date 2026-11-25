@@ -6,7 +6,7 @@ version: v4
 
 # spec-system-init v4
 
-Inicializa, atualiza (v3→v4) ou faz bootstrap brownfield do sistema SPEC-driven **v4** no workspace atual. Schema do manifesto: `sdd-4.0` · template_revision: `4.1.0`. Fonte da verdade dos formatos: templates desta skill.
+Inicializa, atualiza (v3→v4) ou faz bootstrap brownfield do sistema SPEC-driven **v4** no workspace atual. Schema do manifesto: `sdd-4.0` · template_revision atual: `4.1.2` (a CLI grava o valor de `specctl --version`). Fonte da verdade dos formatos: templates desta skill.
 
 **Regras de segurança desta skill:** NUNCA executar passo destrutivo (sobrescrever, mover, remover arquivo, rodar script que altere estado) sem listar o que será feito e obter confirmação explícita. O MODO UPGRADE **sempre apresenta o plano completo antes de aplicar qualquer mudança**. Nunca commitar nada — o usuário decide.
 
@@ -34,6 +34,10 @@ Princípio: **toda região que um gate valida tem UM escritor — a ferramenta.*
 5. **Guards gated por `template_revision ≥ 4.1.0`** — denies novos (LOG, verify-spoof, guard-read de `scripts/specctl.mjs`, secret-scan pré-write, Grep/Glob em archive) só ativam nesse nível; repos v4.0 não quebram.
 6. **formats fatiado** — `rules/formats.md` core + `rules/formats-pipeline.md` (só porte G); guardas PARE gated por template nos docs situacionais; `lifecycle.md` ganha "caminho quente" no topo.
 7. **Regime de equipe declarado** — `"team": "solo"|"multi"` no manifesto (default solo). Em multi: `activate` imprime a coreografia de publicação do claim (PR trivial), `audit` avisa claim não-publicado na base, cápsula carrega `team=multi`; `rules/team.md` é gated pelo campo, não por inferência.
+
+### v4.1.2 (correções — formato inalterado)
+
+`new` sem `--future` já ativa (e, em `team: multi`, imprime a publicação do claim); `activate` só ativa rascunhos de `future/` e vira no-op numa SPEC ativa. `close`/`verify` pulam critérios `[aceito-incompleto]`; placeholder de `verify:` é só o token `<comando>`. Guards: `Write` não reescreve entradas antigas do LOG; temporários (R.12) só na raiz e em `docs/`; secret-scan do stamp-check restrito a `docs/` e entrypoints. Flags desconhecidas são erro; `--help` sai com 0. `reopen` zera Concluída/Commit final, descarta o digest e exige `[conclusão]` nova. Hooks usam `$CLAUDE_PROJECT_DIR` e `SessionStart` cobre `clear`. Skills do pipeline gravam no journal só via `specctl log`; QA evidencia critérios via `check`/`verify`.
 
 ## Roteamento de modos
 
@@ -163,7 +167,7 @@ Atualizar `docs/.spec-system.json` (JSON válido, schema do contrato §2): `inst
 Fragmento: `templates/hooks-settings.json` (SessionStart→`brief`, UserPromptSubmit→`capsule`, PreToolUse Read→`guard-read`, PreToolUse Write|Edit→`guard-write`, PostToolUse→`stamp-check`, PreCompact→`brief --compact`, Stop→`session-close`).
 
 - `.claude/settings.json` NÃO existe → gravar o fragmento como está.
-- Existe → **MERGE**: Read + parse; para cada evento do fragmento, apendar as entradas specctl que ainda não estão lá (idempotência: pular se já houver entrada com `specctl.mjs` e mesmo comando). **NUNCA remover, reordenar ou alterar hooks que não mencionam `specctl.mjs`.** Validar JSON resultante antes de gravar; parse falhou → mostrar o fragmento e pedir merge manual, sem gravar.
+- Existe → **MERGE**: Read + parse; para cada evento do fragmento, apendar as entradas specctl que ainda não estão lá (idempotência: pular se já houver entrada com `specctl.mjs` e o mesmo subcomando). Entrada specctl antiga com caminho relativo (`node scripts/specctl.mjs <sub>`, até a 4.1.1) → **substituir** pela forma do fragmento (`node "$CLAUDE_PROJECT_DIR/scripts/specctl.mjs" <sub>`), que não quebra quando a sessão muda de diretório; nunca deixar as duas. **NUNCA remover, reordenar ou alterar hooks que não mencionam `specctl.mjs`.** Validar JSON resultante antes de gravar; parse falhou → mostrar o fragmento e pedir merge manual, sem gravar.
 
 ### Step 7 — Gerar CLAUDE.md/AGENTS.md via entrypoints (merge mode)
 
@@ -237,7 +241,7 @@ Para cada SPEC em `docs/active/`: criar `docs/claims/SPEC-<id>.md` (formato §5)
 
 Para projeto com código substancial e docs vazias. Pré-requisito: v4 instalada (INIT ou UPGRADE). Tudo roda sob uma **SPEC formal** — o bootstrap é trabalho como outro qualquer.
 
-1. **Abrir SPEC:** em branch própria (R.2), `node scripts/specctl.mjs new bootstrap-docs --porte M --owner @<user>` (G se o repo for muito grande) + `activate`. Fases no SNAPSHOT: varredura → recorte → geração → revisão.
+1. **Abrir SPEC:** em branch própria (R.2), `node scripts/specctl.mjs new bootstrap-docs --porte M --owner @<user>` (G se o repo for muito grande; o `new` já ativa e cria o claim). Fases no SNAPSHOT: varredura → recorte → geração → revisão.
 2. **Varredura (read-only):** mapear diretórios, entrypoints, módulos, rotas, jobs, deps e fronteiras naturais do código.
 3. **Recorte confirmado (R.13 em lote):** propor em UMA mensagem **três recortes alternativos** de áreas — **A** enxuto (~4–6 áreas), **B** médio (~7–12), **C** granular (13+) — cada um com nome da área, definição de 1 linha e paths principais. Usuário escolhe/edita → gravar em `docs/TAXONOMY.md` (a escolha É a confirmação R.13 das áreas).
 4. **Subagentes — 1 por área, em paralelo:** cada um lê SÓ os paths da sua área e gera `docs/features/<area>.md` no formato do contrato §4, com linha `**Origem:** bootstrap — SPEC-<id> (YYYY-MM-DD HH:MM)`: Keywords, Arquivos principais, Resumo, Estado atual (do código REAL), Decisões arquiteturais ativas (inferidas do código, marcadas como inferidas), Gotchas evidentes; "Specs desta feature" = —. Orçamento 6.000 bytes/feature. Nada inventado: só o que o código evidencia.
@@ -272,7 +276,7 @@ Pendências:   <[digest-auto: revisar] ×N · SPECs v3 em janela compat ×N · a
 **Próximos passos (incluir sempre):**
 1. **Branch protection na `main`** exigindo os checks do workflow `docs-gate` (lint --strict, audit --pr, audit --deps, main-gate, index-check) — sem isso R.2/R.7 não têm dente. GitHub → Settings → Branches → Require status checks.
 2. Revisar `docs/TAXONOMY.md` e `docs/CONSTITUTION.md` (stubs) e o bloco projeto do `CLAUDE.md`.
-3. Primeiro trabalho: `/spec <demanda>` (abre checkpoint → plan mode → `specctl new` + `activate`).
+3. Primeiro trabalho: `/spec <demanda>` (abre checkpoint → plan mode → `specctl new`, que já ativa a SPEC).
 4. Upgrade: revisar `[digest-auto: revisar]` e zerar warnings da janela compat.
 5. Brownfield disponível se houver código sem features documentadas.
 
