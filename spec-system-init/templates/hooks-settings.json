@@ -2,11 +2,11 @@
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "startup|resume",
+        "matcher": "startup|resume|clear",
         "hooks": [
           {
             "type": "command",
-            "command": "node scripts/specctl.mjs brief"
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/specctl.mjs\" brief"
           }
         ]
       },
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node scripts/specctl.mjs brief --compact"
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/specctl.mjs\" brief --compact"
           }
         ]
       }
@@ -25,7 +25,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node scripts/specctl.mjs capsule"
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/specctl.mjs\" capsule"
           }
         ]
       }
@@ -36,7 +36,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node scripts/specctl.mjs guard-read"
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/specctl.mjs\" guard-read"
           }
         ]
       },
@@ -45,7 +45,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node scripts/specctl.mjs guard-write"
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/specctl.mjs\" guard-write"
           }
         ]
       }
@@ -56,7 +56,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node scripts/specctl.mjs stamp-check"
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/specctl.mjs\" stamp-check"
           }
         ]
       }
@@ -66,7 +66,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node scripts/specctl.mjs brief --compact"
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/specctl.mjs\" brief --compact"
           }
         ]
       }
@@ -76,7 +76,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node scripts/specctl.mjs session-close"
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/specctl.mjs\" session-close"
           }
         ]
       }

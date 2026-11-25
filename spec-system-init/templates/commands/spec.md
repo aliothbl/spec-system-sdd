@@ -53,6 +53,6 @@ Trate `$ARGUMENTS` inteiro como a demanda. Classificação `[nova]` já confirma
 
 1. **Checkpoint único** (uma só rodada de perguntas): feature(s) de `docs/TAXONOMY.md` (área nova = confirmação explícita, R.13) + porte `P|M|G` (proponha por sinais: arquivos estimados, features tocadas, nº de critérios) + owner.
 2. Entre em **plan mode** com o draft do `main.md` como o próprio plano (formato em docs/rules/formats.md). A aprovação do plano É a validação humana do contrato.
-3. `node scripts/specctl.mjs new <slug> --porte <P|M|G> --owner @<x> --features <a,b>` (+ `--program <p>` se faz parte de um programa — docs/rules/programs.md; `--workspace <w>` se interop — docs/rules/interop.md; `--future` se não vai ativar agora).
-4. Preencha o main.md com o conteúdo aprovado e rode `node scripts/specctl.mjs activate <id> [--branch <b>]`.
+3. `node scripts/specctl.mjs new <slug> --porte <P|M|G> --owner @<x> --features <a,b>` (+ `--program <p>` se faz parte de um programa — docs/rules/programs.md; `--workspace <w>` se interop — docs/rules/interop.md; `--future` se não vai ativar agora). Sem `--future`, o `new` já ativa a SPEC e registra o claim — não rode `activate` (ele só serve para rascunhos de `future/`).
+4. Preencha o main.md com o conteúdo aprovado.
 5. Porte G: proponha o próximo passo do arco (prd/techspec — via pipeline se instalado, senão templates nativos de docs/rules/formats.md).

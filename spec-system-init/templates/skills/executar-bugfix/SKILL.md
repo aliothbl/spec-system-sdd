@@ -15,7 +15,7 @@ If BOTH `docs/.spec-system.json` AND `docs/RULES.md` exist at the project root, 
 4. **Interview dedupe**: before asking any clarification question, read the SPEC's `main.md` and journal; ask ONLY what is not already answered there, and record inferred answers with their source in the generated document.
 5. **Approvals**: implementation proceeds autonomously — EXCEPT when a fix changes the SPEC's acceptance criteria or contracted scope: in that case, ALWAYS ask the user first (one question per affected criterion).
 6. **Commands**: use the command labels from the SDD manifest (`commands: {test, typecheck, lint, dev, e2e}`) instead of any hardcoded or detected command.
-7. **Memory feedback (mandatory final step)**: after this skill's last step, append a dated summary of root causes, decisions, and learnings to the active SPEC's journal (root causes are gotcha candidates for the touched features), and update the artifact pointers in the SPEC's `main.md`.
+7. **Memory feedback (mandatory final step)**: after this skill's last step, append a dated summary of root causes, decisions, and learnings to the active SPEC's journal (root causes are gotcha candidates for the touched features), and update the artifact pointers in the SPEC's `main.md`. Journal entries go ONLY through `node scripts/specctl.mjs log <spec-id> <tipo> "title"` (multi-line body via `--stdin`; types: descoberta | decisão | tentativa | blocker | nota) — never edit the journal's `## LOG` directly (the guard-write hook denies it).
 
 If the manifest is absent, ignore this section completely — the standalone behavior below is unchanged.
 

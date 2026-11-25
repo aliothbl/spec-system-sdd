@@ -9,13 +9,13 @@ description: Reviews completed task implementations against project code standar
 
 If BOTH `docs/.spec-system.json` AND `docs/RULES.md` exist at the project root, the project is governed by the SDD spec system. In that case, and ONLY then:
 
-1. **Workspace**: resolve the feature workspace directory from the SDD manifest/active SPEC. Every reference in this skill to task file locations means that resolved directory's `tasks/` subfolder first.
+1. **Workspace**: resolve the feature workspace directory from the SDD manifest/active SPEC. Every reference in this skill to task file locations means the ROOT of that resolved directory (`tasks.md` and `NN_task.md` live directly in the SPEC folder with `interop: inline`, or in `tasks/prd-<slug>/` with `interop: external`). Never search `docs/tasks/` or a `tasks/` subfolder of the SPEC.
 2. **Slug**: if a slug/workspace and task number are provided by the caller, use them verbatim — never guess by recency.
 3. **Requirements equivalence**: where a prerequisite requires `prd.md` and it does not exist, accept the SPEC's `main.md` as the equivalent requirements document.
 4. **Interview dedupe**: before asking any clarification question, read the SPEC's `main.md` and journal; ask ONLY what is not already answered there.
 5. **Approvals**: findings are recorded and reported — decisions that change the SPEC's acceptance criteria or scope ALWAYS require explicit user approval.
 6. **Commands**: use the command labels from the SDD manifest (`commands: {test, typecheck, lint, dev, e2e}`) instead of any hardcoded or detected command.
-7. **Memory feedback (mandatory final step)**: after this skill's last step, append CRITICAL/MAJOR findings as dated notes to the active SPEC's journal (gotcha candidates for the touched features).
+7. **Memory feedback (mandatory final step)**: after this skill's last step, append CRITICAL/MAJOR findings as dated notes to the active SPEC's journal (gotcha candidates for the touched features). Journal entries go ONLY through `node scripts/specctl.mjs log <spec-id> <tipo> "title"` (multi-line body via `--stdin`; types: descoberta | decisão | tentativa | blocker | nota) — never edit the journal's `## LOG` directly (the guard-write hook denies it).
 
 If the manifest is absent, ignore this section completely — the standalone behavior below is unchanged.
 

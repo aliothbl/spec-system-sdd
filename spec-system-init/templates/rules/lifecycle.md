@@ -6,11 +6,11 @@
 
 O ciclo comum de uma SPEC, com os comandos EXATOS. Detalhe e casos raros: seções abaixo.
 
-**Abrir** — em branch de feature (`main` só aceita `--future`):
+**Abrir** — em branch de feature (`main` só aceita `--future`). O `new` já ativa: cria a pasta em `active/`, o journal, a entrada `[ativação]` e o claim. Não rode `activate` depois.
 ```
 node scripts/specctl.mjs new <slug> --porte P|M|G --owner @voce --features area
-node scripts/specctl.mjs activate <id> --branch feature/<slug>
 ```
+Rascunho para depois: `new <slug> --future` (em `future/`) e, quando for trabalhar nele, `activate <id>` na branch de feature.
 
 **Trabalhar** — na hora do evento, nunca em batch:
 - Critério de porte **P** entregue → `node scripts/specctl.mjs check <id> <n>` (carimba timestamp+commit; recusa critério com `verify:`).
@@ -93,7 +93,7 @@ Descobriu no meio que precisa de algo não construído: (1) `specctl log <id> bl
 
 ## 3.3 Emergência (hotfix de produção)
 
-A via expressa JÁ É o porte P: `new` + `activate` + código + `check` + `close` cabem em minutos. Se a urgência não permitiu nem isso (push direto sem SPEC): **regularize a posteriori** — crie a SPEC retroativa no primeiro momento calmo, com `[nota] regularização: hotfix aplicado em <commit> antes da SPEC` no journal e critérios refletindo o que foi feito. Bypass sem regularização é dívida invisível — o audit aponta commits sem trailer (R.17).
+A via expressa JÁ É o porte P: `new` + código + `check` + `close` cabem em minutos. Se a urgência não permitiu nem isso (push direto sem SPEC): **regularize a posteriori** — crie a SPEC retroativa no primeiro momento calmo, com `[nota] regularização: hotfix aplicado em <commit> antes da SPEC` no journal e critérios refletindo o que foi feito. Bypass sem regularização é dívida invisível — o audit aponta commits sem trailer (R.17).
 
 ## 4. Retomada — reconciliação SNAPSHOT × git
 
