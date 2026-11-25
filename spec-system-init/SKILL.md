@@ -39,6 +39,10 @@ Princípio: **toda região que um gate valida tem UM escritor — a ferramenta.*
 
 `new` sem `--future` já ativa (e, em `team: multi`, imprime a publicação do claim); `activate` só ativa rascunhos de `future/` e vira no-op numa SPEC ativa. `close`/`verify` pulam critérios `[aceito-incompleto]`; placeholder de `verify:` é só o token `<comando>`. Guards: `Write` não reescreve entradas antigas do LOG; temporários (R.12) só na raiz e em `docs/`; secret-scan do stamp-check restrito a `docs/` e entrypoints. Flags desconhecidas são erro; `--help` sai com 0. `reopen` zera Concluída/Commit final, descarta o digest e exige `[conclusão]` nova. Hooks usam `$CLAUDE_PROJECT_DIR` e `SessionStart` cobre `clear`. Skills do pipeline gravam no journal só via `specctl log`; QA evidencia critérios via `check`/`verify`.
 
+### v4.2 (em andamento) — vocabulário bilíngue na CLI
+
+O `specctl` lê os marcadores de formato em português e em inglês: campos (`**Porte:**`/`**Size:**`, `**Commit final:**`/`**Final commit:**`…), seções (`## Critério de aceite`/`## Acceptance criteria`…), tipos de LOG (`[conclusão]`/`[completion]`…, também sem acento), `[aceito-incompleto: …]`/`[accepted-incomplete: …]` (aspas retas ou curvas), `(cobre RF-n)`/`(covers FR-n)`, `depende de:`/`depends on:`, porte `P|M|G`/`S|M|L` e os marcadores do bloco do projeto. A escrita segue a chave `"lang": "pt" | "en"` do manifesto (ausente = `pt`, saída idêntica à 4.1); ao editar um documento existente, a CLI mantém o idioma dele. `init --lang en` cria o manifesto em inglês. Flags com alias: `--size`/`--porte`, `--reason`/`--motivo`, `--quote`/`--cita`. As mensagens da CLI, o `CLAUDE.md` gerado e a documentação ainda estão em português.
+
 ## Roteamento de modos
 
 | Estado detectado no workspace | Modo |
