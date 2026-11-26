@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * specctl.mjs — CLI única do sistema SPEC (SDD v4)
- * Versão: 4.1.0 · schema: sdd-4.0 · Node >= 18 · zero dependências · Windows/macOS/Linux
+ * Versão: 4.2.0 · schema: sdd-4.0 · Node >= 18 · zero dependências · Windows/macOS/Linux
  *
  * Mapa de comandos:
  *   init [--force]                      cria estrutura docs/, manifesto e .gitignore
@@ -47,7 +47,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawnSync, execSync } from 'node:child_process';
 
-const VERSION = '4.1.2';
+const VERSION = '4.2.0';
 const SCHEMA = 'sdd-4.0';
 const SPEC_RE = /^SPEC-\d{8}-\d{4}-[a-z0-9][a-z0-9-]*$/;
 const SPEC_REF_RE = /\bSPEC-\d{8}-\d{4}(?:-[a-z0-9][a-z0-9-]*)?\b/g;
@@ -57,14 +57,22 @@ const PHASE_STATUS = { active: ['active'], future: ['draft', 'paused'], archive:
 const LOG_TYPES = ['ativação', 'descoberta', 'decisão', 'tentativa', 'blocker', 'unblock', 'refactor', 'nota', 'conclusão'];
 // C2 — bloco JIT ESTÁVEL (sem NOW, ≤900B): impresso SÓ por new/activate (close --dry tem o checklist);
 // PROIBIDO adicionar output a guard-*/stamp-check — silêncio em sucesso.
-const JIT_FACTS = [
+// (função: LANG só é conhecido depois de requireRoot)
+const jitFacts = () => (LANG === 'en' ? [
+  '— system facts —',
+  `LOG types: ${LOG_TYPES.map((t) => LOG_TYPE_EN[t]).join(' | ')}`,
+  'LOG entries: node scripts/specctl.mjs log <id> <type> "title" [--stdin|--body-file <f>] — never Edit the ## LOG directly',
+  'criteria: node scripts/specctl.mjs check <id> <n> (size S) · node scripts/specctl.mjs verify <id> (M/L)',
+  'close: node scripts/specctl.mjs close <id> --dry first',
+  'digest/bytes: the tool measures — never count',
+] : [
   '— fatos do sistema —',
   `tipos de LOG: ${LOG_TYPES.join(' | ')}`,
   'entradas de LOG: node scripts/specctl.mjs log <id> <tipo> "título" [--stdin|--body-file <f>] — nunca Edit direto no ## LOG',
   'critérios: node scripts/specctl.mjs check <id> <n> (porte P) · node scripts/specctl.mjs verify <id> (M/G)',
   'fechar: node scripts/specctl.mjs close <id> --dry primeiro',
   'digest/bytes: a ferramenta mede — nunca conte',
-].join('\n');
+]).join('\n');
 // C1 — nota auto-doc do stub de digest (strippada pelos injetores, DESCONTADA do budget via digestMeasure)
 const DIGEST_STUB_NOTE = '<!-- ≤2000 bytes LF; a ferramenta mede -->';
 const DIGEST_STUB_NOTE_EN = '<!-- ≤2000 bytes LF; the tool measures -->';
@@ -195,7 +203,7 @@ function parseTs(s) {
   if (!m) return null;
   return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
 }
-function die(msg) { process.stderr.write(`[specctl] ERRO: ${msg}\n`); process.exit(1); }
+function die(msg) { process.stderr.write(`[specctl] ${tr(LANG, 'ERRO', 'ERROR')}: ${msg}\n`); process.exit(1); }
 function out(msg) { process.stdout.write(msg + '\n'); }
 function splitList(v) {
   if (!v || v.trim() === '—' || v.trim() === '-') return [];
@@ -239,13 +247,13 @@ function gitRun(args, cwd) {
 // git obrigatório: falha explícita + exit 1 (§15 — nunca engolir erro de git)
 function git(args, cwd) {
   const r = gitRun(args, cwd);
-  if (!r.ok) die(`git ${args.join(' ')} falhou: ${r.err || '(sem stderr)'} — corrija o estado do git antes de continuar`);
+  if (!r.ok) die(tr(LANG, `git ${args.join(' ')} falhou: ${r.err || '(sem stderr)'} — corrija o estado do git antes de continuar`, `git ${args.join(' ')} failed: ${r.err || '(no stderr)'} — fix the git state before continuing`));
   return r.out;
 }
 // git opcional (hooks/brief): degrada com AVISO EXPLÍCITO no stderr, nunca silencioso
 function gitTry(args, cwd) {
   const r = gitRun(args, cwd);
-  if (!r.ok) { process.stderr.write(`[specctl] AVISO: git ${args.join(' ')} falhou: ${r.err || '(sem stderr)'}\n`); return null; }
+  if (!r.ok) { process.stderr.write(tr(LANG, `[specctl] AVISO: git ${args.join(' ')} falhou: ${r.err || '(sem stderr)'}\n`, `[specctl] WARNING: git ${args.join(' ')} failed: ${r.err || '(no stderr)'}\n`)); return null; }
   return r.out;
 }
 function currentBranch(root) {
@@ -253,7 +261,7 @@ function currentBranch(root) {
   if (a.ok) return a.out;
   const b = gitRun(['rev-parse', '--abbrev-ref', 'HEAD'], root);
   if (b.ok) return b.out === 'HEAD' ? null : b.out; // detached HEAD: git devolve o literal "HEAD" — não é branch
-  process.stderr.write(`[specctl] AVISO: branch git indeterminável: ${a.err || b.err}\n`);
+  process.stderr.write(tr(LANG, `[specctl] AVISO: branch git indeterminável: ${a.err || b.err}\n`, `[specctl] WARNING: cannot determine git branch: ${a.err || b.err}\n`));
   return null;
 }
 const DEFAULT_PROTECTED = ['main', 'master', 'develop', 'homolog', 'hmg'];
@@ -288,7 +296,7 @@ function findRoot(start) {
 }
 function requireRoot() {
   const r = findRoot(process.cwd());
-  if (!r) die('projeto não encontrado — nenhum docs/.spec-system.json (nem docs/RULES.md) subindo a partir de ' + process.cwd());
+  if (!r) die(tr(LANG, 'projeto não encontrado — nenhum docs/.spec-system.json (nem docs/RULES.md) subindo a partir de ', 'project not found — no docs/.spec-system.json (nor docs/RULES.md) walking up from ') + process.cwd());
   setLang(r);
   return r;
 }
@@ -301,7 +309,7 @@ function manifest(root) {
   const p = P(root, 'docs', '.spec-system.json');
   if (!exists(p)) return { ...def, schema: 'sdd-3-compat' };
   try { return { ...def, ...JSON.parse(read(p)) }; }
-  catch (e) { process.stderr.write(`[specctl] AVISO: manifesto inválido (${e.message}) — usando defaults\n`); return def; }
+  catch (e) { process.stderr.write(tr(LANG, `[specctl] AVISO: manifesto inválido (${e.message}) — usando defaults\n`, `[specctl] WARNING: invalid manifest (${e.message}) — using defaults\n`)); return def; }
 }
 
 // ---------------------------------------------------------------- SPECs
@@ -320,14 +328,14 @@ function listSpecs(root) {
 function activeSpecs(root) { return listSpecs(root).filter((s) => s.phase === 'active'); }
 function idPrefix(id) { return id.slice(0, 18); } // SPEC-YYYYMMDD-HHMM
 function findSpec(root, id) {
-  if (!id) die('informe o id da SPEC (SPEC-YYYYMMDD-HHMM-slug)');
+  if (!id) die(tr(LANG, 'informe o id da SPEC (SPEC-YYYYMMDD-HHMM-slug)', 'give the SPEC id (SPEC-YYYYMMDD-HHMM-slug)'));
   const all = listSpecs(root);
   const exact = all.find((s) => s.id === id);
   if (exact) return exact;
   const cand = all.filter((s) => s.id.startsWith(id));
   if (cand.length === 1) return cand[0];
-  if (cand.length > 1) die(`id ambíguo '${id}' — candidatas: ${cand.map((s) => s.id).join(', ')}`);
-  die(`SPEC '${id}' não encontrada em docs/{active,future,archive,discard}/`);
+  if (cand.length > 1) die(tr(LANG, `id ambíguo '${id}' — candidatas: ${cand.map((s) => s.id).join(', ')}`, `ambiguous id '${id}' — candidates: ${cand.map((s) => s.id).join(', ')}`));
+  die(tr(LANG, `SPEC '${id}' não encontrada em docs/{active,future,archive,discard}/`, `SPEC '${id}' not found in docs/{active,future,archive,discard}/`));
 }
 
 // maskFences: cópia das linhas onde conteúdo DENTRO de ``` ```/~~~ e de comentários HTML multi-linha vira ''.
@@ -725,13 +733,13 @@ function ensureGitkeeps(root) {
 function cmdInit(flags) {
   const root = findRoot(process.cwd()) || process.cwd();
   const manPath = P(root, 'docs', '.spec-system.json');
-  if (exists(manPath) && !flags.force) die(`já instalado (${relOf(root, manPath)}) — use --force para regravar o manifesto`);
+  if (exists(manPath) && !flags.force) die(tr(flags.lang || manifest(root).lang, `já instalado (${relOf(root, manPath)}) — use --force para regravar o manifesto`, `already installed (${relOf(root, manPath)}) — use --force to rewrite the manifest`));
   for (const d of REQUIRED_DIRS) fs.mkdirSync(P(root, 'docs', d), { recursive: true });
   ensureGitkeeps(root);
   fs.mkdirSync(P(root, '.scratch'), { recursive: true });
   let prev = {};
   if (exists(manPath)) { try { prev = JSON.parse(read(manPath)); } catch { prev = {}; } }
-  if (flags.lang !== undefined && !['pt', 'en'].includes(flags.lang)) die(`--lang inválido '${flags.lang}' — use pt | en`);
+  if (flags.lang !== undefined && !['pt', 'en'].includes(flags.lang)) die(tr(prev.lang, `--lang inválido '${flags.lang}' — use pt | en`, `invalid --lang '${flags.lang}' — use pt | en`));
   const lang = flags.lang || prev.lang;
   LANG = lang === 'en' ? 'en' : 'pt'; // stubs e índices abaixo já nascem no idioma escolhido
   const man = {
@@ -834,27 +842,27 @@ function cmdInit(flags) {
 `);
   // INDEX.md/ARCHIVE-INDEX.md/PROGRAMS.md nascem GERADOS — lint pós-init passa limpo (equivalente a `specctl index` quiet)
   cmdIndex({ quiet: true });
-  out(`init ok — estrutura docs/, manifesto (${SCHEMA}), índices gerados e .gitignore em ${root}`);
+  out(tr(LANG, `init ok — estrutura docs/, manifesto (${SCHEMA}), índices gerados e .gitignore em ${root}`, `init ok — docs/ structure, manifest (${SCHEMA}), generated indexes and .gitignore in ${root}`));
 }
 
 function cmdNew(pos, flags) {
   const root = requireRoot();
   const slug = pos[0];
-  if (!slug) die('uso: specctl new <slug> [--future] [--porte P|M|G] [--owner @x] [--features a,b] [--program p] [--workspace w]');
-  if (!/^[a-z0-9][a-z0-9-]{0,48}$/.test(slug)) die(`slug inválido '${slug}' — use kebab-case [a-z0-9-]`);
+  if (!slug) die(tr(LANG, 'uso: specctl new <slug> [--future] [--porte P|M|G] [--owner @x] [--features a,b] [--program p] [--workspace w]', 'usage: specctl new <slug> [--future] [--size S|M|L] [--owner @x] [--features a,b] [--program p] [--workspace w]'));
+  if (!/^[a-z0-9][a-z0-9-]{0,48}$/.test(slug)) die(tr(LANG, `slug inválido '${slug}' — use kebab-case [a-z0-9-]`, `invalid slug '${slug}' — use kebab-case [a-z0-9-]`));
   const porte = canonPorte(flags.porte || 'M'); // aceita P|M|G e S|M|L
-  if (!['P', 'M', 'G'].includes(porte)) die(`Porte inválido '${flags.porte}' — use P | M | G (ou S | M | L)`);
+  if (!['P', 'M', 'G'].includes(porte)) die(tr(LANG, `Porte inválido '${flags.porte}' — use P | M | G (ou S | M | L)`, `invalid size '${flags.porte}' — use S | M | L (or P | M | G)`));
   const future = !!flags.future;
   const branch = currentBranch(root);
   if (!future && isProtectedBranch(branch, root)) {
-    die(`R.2: SPEC ativa é proibida na branch protegida '${branch}' (${protectedBranches(root).join('/')}) — trabalho vive sempre em branch própria. Caminho correto: git checkout -b feature/${slug} e rode o comando lá — ou --future para rascunho em docs/future/.`);
+    die(tr(LANG, `R.2: SPEC ativa é proibida na branch protegida '${branch}' (${protectedBranches(root).join('/')}) — trabalho vive sempre em branch própria. Caminho correto: git checkout -b feature/${slug} e rode o comando lá — ou --future para rascunho em docs/future/.`, `R.2: an active SPEC is forbidden on the protected branch '${branch}' (${protectedBranches(root).join('/')}) — work always lives on its own branch. Correct path: git checkout -b feature/${slug} and run the command there — or --future for a draft in docs/future/.`));
   }
   const { date, time } = nowIdParts();
   const id = `SPEC-${date}-${time}-${slug}`;
   const idTs = `${date}-${time}`;
   const phase = future ? 'future' : 'active';
   const dir = P(root, 'docs', phase, id);
-  if (exists(dir)) die(`já existe: ${relOf(root, dir)}`);
+  if (exists(dir)) die(tr(LANG, `já existe: ${relOf(root, dir)}`, `already exists: ${relOf(root, dir)}`));
   let owner = flags.owner;
   if (!owner) {
     const un = gitTry(['config', 'user.name'], root);
@@ -882,23 +890,23 @@ function cmdNew(pos, flags) {
     appendLog(dir, 'ativação', (l) => tr(l, `SPEC criada e ativada (${owner}, branch ${branch || '—'}, base ${base})`, `SPEC created and activated (${owner}, branch ${branch || '—'}, base ${base})`));
     writeFile(claimPath(root, id), makeClaim({ id, title, owner, branch: branch || '—', base, features: flags.features ? splitList(flags.features).join(', ') : '—', ativada: now() }));
   }
-  out(`criada ${relOf(root, dir)} (${future ? 'rascunho em future/ — status draft' : 'ativa — claim registrado; NÃO rode activate (só serve para rascunhos de future/)'})`);
-  if (future) out(`ative com: node scripts/specctl.mjs activate ${id}`);
+  out(tr(LANG, `criada ${relOf(root, dir)} (${future ? 'rascunho em future/ — status draft' : 'ativa — claim registrado; NÃO rode activate (só serve para rascunhos de future/)'})`, `created ${relOf(root, dir)} (${future ? 'draft in future/ — status draft' : 'active — claim registered; do NOT run activate (it is only for drafts in future/)'})`));
+  if (future) out(tr(LANG, `ative com: node scripts/specctl.mjs activate ${id}`, `activate with: node scripts/specctl.mjs activate ${id}`));
   else printClaimPublish(root, id, flags.base || detectBaseBranch(root, branch), branch);
-  out('preencha Objetivo/Escopo/Critério de aceite em main.md — formatos: docs/rules/formats.md');
-  out(JIT_FACTS); // C2 — bloco estável (≤900B, sem NOW): permitido SÓ em new/activate/close--dry
+  out(tr(LANG, 'preencha Objetivo/Escopo/Critério de aceite em main.md — formatos: docs/rules/formats.md', 'fill in Goal/Scope/Acceptance criteria in main.md — formats: docs/rules/formats.md'));
+  out(jitFacts()); // C2 — bloco estável (≤900B, sem NOW): permitido SÓ em new/activate/close--dry
 }
 
 function cmdActivate(pos, flags) {
   const root = requireRoot();
   const spec = findSpec(root, pos[0]);
   // `new` sem --future já ativa: activate repetido é no-op informativo, não erro (agentes seguiam docs antigas new+activate)
-  if (spec.phase === 'active') { out(`${spec.id} já está ativa (new sem --future já ativa e registra o claim) — nada a fazer`); return; }
-  if (spec.phase !== 'future') die(`activate: ${spec.id} está em ${spec.phase}/ — só rascunhos em future/ podem ser ativados (pausadas: use resume)`);
+  if (spec.phase === 'active') { out(tr(LANG, `${spec.id} já está ativa (new sem --future já ativa e registra o claim) — nada a fazer`, `${spec.id} is already active (new without --future already activates and registers the claim) — nothing to do`)); return; }
+  if (spec.phase !== 'future') die(tr(LANG, `activate: ${spec.id} está em ${spec.phase}/ — só rascunhos em future/ podem ser ativados (pausadas: use resume)`, `activate: ${spec.id} is in ${spec.phase}/ — only drafts in future/ can be activated (paused: use resume)`));
   const pm = parseMain(read(P(spec.dir, 'main.md')));
-  if (pm.fields.Status === 'paused') die(`${spec.id} está pausada — caminho correto: node scripts/specctl.mjs resume ${spec.id}`);
+  if (pm.fields.Status === 'paused') die(tr(LANG, `${spec.id} está pausada — caminho correto: node scripts/specctl.mjs resume ${spec.id}`, `${spec.id} is paused — correct path: node scripts/specctl.mjs resume ${spec.id}`));
   const branch = flags.branch || currentBranch(root);
-  if (isProtectedBranch(branch, root)) die(`R.2: não ative SPEC na branch protegida '${branch}' (${protectedBranches(root).join('/')}). Caminho correto: git checkout -b feature/<slug> e rode activate lá.`);
+  if (isProtectedBranch(branch, root)) die(tr(LANG, `R.2: não ative SPEC na branch protegida '${branch}' (${protectedBranches(root).join('/')}). Caminho correto: git checkout -b feature/<slug> e rode activate lá.`, `R.2: do not activate a SPEC on the protected branch '${branch}' (${protectedBranches(root).join('/')}). Correct path: git checkout -b feature/<slug> and run activate there.`));
   const base = flags.base || detectBaseBranch(root, branch); // branch de onde a feature saiu — usada no fechamento (merge/checkout)
   let txt = read(P(spec.dir, 'main.md'));
   txt = setField(txt, 'Status', 'active');
@@ -918,28 +926,28 @@ function cmdActivate(pos, flags) {
     ativada: now(),
   }));
   cmdIndex({ quiet: true }); // pasta mudou de future/ → active/: DEFERRED/INDEX citam o caminho
-  out(`ativada: docs/active/${spec.id} (claim: docs/claims/${spec.id}.md)`);
+  out(tr(LANG, `ativada: docs/active/${spec.id} (claim: docs/claims/${spec.id}.md)`, `activated: docs/active/${spec.id} (claim: docs/claims/${spec.id}.md)`));
   printClaimPublish(root, spec.id, base, branch);
-  out(JIT_FACTS); // C2 — bloco estável (≤900B, sem NOW): permitido SÓ em new/activate/close--dry
+  out(jitFacts()); // C2 — bloco estável (≤900B, sem NOW): permitido SÓ em new/activate/close--dry
 }
 
 // team: multi — o claim precisa correr NA FRENTE do trabalho (visibilidade p/ os outros devs, R.11/team.md).
 // Chamado por toda via que cria claim de SPEC recém-ativada (new ativo e activate).
 function printClaimPublish(root, id, base, branch) {
   if (manifest(root).team !== 'multi') return;
-  out(`— team: multi — PUBLIQUE o claim na ${base} agora (PR trivial, diff só do claim):`);
+  out(tr(LANG, `— team: multi — PUBLIQUE o claim na ${base} agora (PR trivial, diff só do claim):`, `— team: multi — PUBLISH the claim to ${base} now (trivial PR, diff is only the claim):`));
   out(`  git checkout -b claim/${id} ${base}`);
   out(`  git checkout ${branch || '<branch>'} -- docs/claims/${id}.md`);
   out(`  git commit -m "docs: claim ${id} (R.11)" && git push -u origin claim/${id}`);
-  out(`  abra o PR para ${base} (auto-merge se permitido) e volte: git checkout ${branch || '<branch>'}`);
+  out(tr(LANG, `  abra o PR para ${base} (auto-merge se permitido) e volte: git checkout ${branch || '<branch>'}`, `  open the PR to ${base} (auto-merge if allowed) and go back: git checkout ${branch || '<branch>'}`));
 }
 
 function cmdPause(pos, flags) {
   const root = requireRoot();
   const spec = findSpec(root, pos[0]);
-  if (spec.phase !== 'active') die(`pause: ${spec.id} está em ${spec.phase}/ — só SPECs ativas podem ser pausadas`);
+  if (spec.phase !== 'active') die(tr(LANG, `pause: ${spec.id} está em ${spec.phase}/ — só SPECs ativas podem ser pausadas`, `pause: ${spec.id} is in ${spec.phase}/ — only active SPECs can be paused`));
   const motivo = flags.motivo;
-  if (!motivo) die('pause exige --motivo "..." (R.5: pausa preserva contexto com motivo)');
+  if (!motivo) die(tr(LANG, 'pause exige --motivo "..." (R.5: pausa preserva contexto com motivo)', 'pause requires --reason "..." (R.5: a pause keeps context with a reason)'));
   let txt = read(P(spec.dir, 'main.md'));
   txt = setField(txt, 'Status', 'paused');
   txt = setField(txt, 'Pausada em', `${now()} — ${motivo}`);
@@ -948,18 +956,18 @@ function cmdPause(pos, flags) {
   const dst = moveSpec(spec, root, 'future');
   removeClaim(root, spec.id);
   cmdIndex({ quiet: true }); // pasta mudou de active/ → future/: DEFERRED/INDEX citam o caminho
-  out(`pausada: docs/future/${spec.id} (claim removido). Retome com: node scripts/specctl.mjs resume ${spec.id}`);
+  out(tr(LANG, `pausada: docs/future/${spec.id} (claim removido). Retome com: node scripts/specctl.mjs resume ${spec.id}`, `paused: docs/future/${spec.id} (claim removed). Resume with: node scripts/specctl.mjs resume ${spec.id}`));
   void dst;
 }
 
 function cmdResume(pos) {
   const root = requireRoot();
   const spec = findSpec(root, pos[0]);
-  if (spec.phase !== 'future') die(`resume: ${spec.id} está em ${spec.phase}/ — só pausadas em future/ podem ser retomadas`);
+  if (spec.phase !== 'future') die(tr(LANG, `resume: ${spec.id} está em ${spec.phase}/ — só pausadas em future/ podem ser retomadas`, `resume: ${spec.id} is in ${spec.phase}/ — only paused SPECs in future/ can be resumed`));
   const pm = parseMain(read(P(spec.dir, 'main.md')));
-  if (pm.fields.Status !== 'paused') die(`${spec.id} tem status '${pm.fields.Status}' — rascunhos usam: node scripts/specctl.mjs activate ${spec.id}`);
+  if (pm.fields.Status !== 'paused') die(tr(LANG, `${spec.id} tem status '${pm.fields.Status}' — rascunhos usam: node scripts/specctl.mjs activate ${spec.id}`, `${spec.id} has status '${pm.fields.Status}' — drafts use: node scripts/specctl.mjs activate ${spec.id}`));
   const branch = currentBranch(root);
-  if (isProtectedBranch(branch, root)) die(`R.2: não retome SPEC na branch protegida '${branch}' (${protectedBranches(root).join('/')}). Caminho correto: git checkout -b feature/<slug> e rode resume lá.`);
+  if (isProtectedBranch(branch, root)) die(tr(LANG, `R.2: não retome SPEC na branch protegida '${branch}' (${protectedBranches(root).join('/')}). Caminho correto: git checkout -b feature/<slug> e rode resume lá.`, `R.2: do not resume a SPEC on the protected branch '${branch}' (${protectedBranches(root).join('/')}). Correct path: git checkout -b feature/<slug> and run resume there.`));
   let txt = read(P(spec.dir, 'main.md'));
   txt = setField(txt, 'Status', 'active');
   txt = setField(txt, 'Reativada em', now(), 'Pausada em'); // novo campo entra logo após "Pausada em" (PT ou EN)
@@ -978,7 +986,7 @@ function cmdResume(pos) {
     ativada: now(),
   }));
   cmdIndex({ quiet: true }); // pasta mudou de future/ → active/: DEFERRED/INDEX citam o caminho
-  out(`retomada: docs/active/${spec.id} (claim recriado)`);
+  out(tr(LANG, `retomada: docs/active/${spec.id} (claim recriado)`, `resumed: docs/active/${spec.id} (claim recreated)`));
 }
 
 // reopen: rota mecânica da "Aplicação imediata" do R.6.2 (lifecycle §5.1) — SPEC arquivada com pendência
@@ -986,11 +994,11 @@ function cmdResume(pos) {
 function cmdReopen(pos, flags) {
   const root = requireRoot();
   const spec = findSpec(root, pos[0]);
-  if (spec.phase !== 'archive') die(`reopen: ${spec.id} está em ${spec.phase}/ — só SPECs arquivadas reabrem (pausada: resume; descartada não reabre, crie SPEC nova citando-a)`);
+  if (spec.phase !== 'archive') die(tr(LANG, `reopen: ${spec.id} está em ${spec.phase}/ — só SPECs arquivadas reabrem (pausada: resume; descartada não reabre, crie SPEC nova citando-a)`, `reopen: ${spec.id} is in ${spec.phase}/ — only archived SPECs reopen (paused: resume; a discarded SPEC does not reopen, create a new SPEC citing it)`));
   const motivo = flags.motivo;
-  if (!motivo) die('reopen exige --motivo "..." (por que o fechamento foi indevido — ex.: critério aceito sem autorização R.6.2)');
+  if (!motivo) die(tr(LANG, 'reopen exige --motivo "..." (por que o fechamento foi indevido — ex.: critério aceito sem autorização R.6.2)', 'reopen requires --reason "..." (why the close was improper — e.g. a criterion accepted without R.6.2 authorization)'));
   const branch = currentBranch(root);
-  if (isProtectedBranch(branch, root)) die(`R.2: não reabra SPEC na branch protegida '${branch}' (${protectedBranches(root).join('/')}). Caminho correto: git checkout -b feature/<slug> e rode reopen lá.`);
+  if (isProtectedBranch(branch, root)) die(tr(LANG, `R.2: não reabra SPEC na branch protegida '${branch}' (${protectedBranches(root).join('/')}). Caminho correto: git checkout -b feature/<slug> e rode reopen lá.`, `R.2: do not reopen a SPEC on the protected branch '${branch}' (${protectedBranches(root).join('/')}). Correct path: git checkout -b feature/<slug> and run reopen there.`));
   let txt = read(P(spec.dir, 'main.md'));
   txt = setField(txt, 'Status', 'active');
   txt = setField(txt, 'Reaberta em', `${now()} — ${motivo}`, 'Criada'); // novo campo entra logo após "Criada" (PT ou EN)
@@ -1013,66 +1021,66 @@ function cmdReopen(pos, flags) {
     ativada: now(),
   }));
   cmdIndex({ quiet: true });
-  out(`reaberta: docs/active/${spec.id} (claim recriado, INDEX regenerado)`);
-  out(`complete o trabalho e feche de novo: node scripts/specctl.mjs close ${spec.id} --dry`);
+  out(tr(LANG, `reaberta: docs/active/${spec.id} (claim recriado, INDEX regenerado)`, `reopened: docs/active/${spec.id} (claim recreated, INDEX regenerated)`));
+  out(tr(LANG, `complete o trabalho e feche de novo: node scripts/specctl.mjs close ${spec.id} --dry`, `finish the work and close again: node scripts/specctl.mjs close ${spec.id} --dry`));
 }
 
 function featureConcludedOk(root, feat, id) {
   const fp = P(root, 'docs', 'features', ...feat.split('/')) + '.md';
-  if (!exists(fp)) return { ok: false, why: `docs/features/${feat}.md inexistente (R.7)` };
+  if (!exists(fp)) return { ok: false, why: tr(LANG, `docs/features/${feat}.md inexistente (R.7)`, `docs/features/${feat}.md does not exist (R.7)`) };
   const txt = stripFences(read(fp)); // fences fora: SPEC-id de EXEMPLO num bloco de código não prova R.7
   const pref = idPrefix(id);
   const m = /###\s+(?:Conclu[íi]das|Completed)([\s\S]*?)(?=\n#{2,3}\s|$)/.exec(txt);
   const scope = m ? m[1] : txt;
-  if (!scope.includes(pref)) return { ok: false, why: `R.7: adicione ${pref} em '### Concluídas' de docs/features/${feat}.md (validação por CONTEÚDO)` };
+  if (!scope.includes(pref)) return { ok: false, why: tr(LANG, `R.7: adicione ${pref} em '### Concluídas' de docs/features/${feat}.md (validação por CONTEÚDO)`, `R.7: add ${pref} under '### Completed' in docs/features/${feat}.md (validated by CONTENT)`) };
   return { ok: true };
 }
 
 function cmdArchive(pos) {
   const root = requireRoot();
   const spec = findSpec(root, pos[0]);
-  if (spec.phase !== 'active') die(`archive: ${spec.id} está em ${spec.phase}/ — só SPECs ativas são arquivadas (rascunho abandonado: discard)`);
+  if (spec.phase !== 'active') die(tr(LANG, `archive: ${spec.id} está em ${spec.phase}/ — só SPECs ativas são arquivadas (rascunho abandonado: discard)`, `archive: ${spec.id} is in ${spec.phase}/ — only active SPECs are archived (abandoned draft: discard)`));
   const mainPath = P(spec.dir, 'main.md');
   const pm = parseMain(read(mainPath));
   const pend = [];
   const crit = getCriteria(pm);
-  if (!crit || !crit.length) pend.push('seção "## Critério de aceite" sem checkboxes — contrato R.6.2 vazio');
+  if (!crit || !crit.length) pend.push(tr(LANG, 'seção "## Critério de aceite" sem checkboxes — contrato R.6.2 vazio', 'section "## Acceptance criteria" has no checkboxes — R.6.2 contract is empty'));
   else for (const c of crit) {
     if (!c.checked && !ACEITO_RE.test(c.raw)) {
-      pend.push(`critério aberto sem marcador [aceito-incompleto: "citação literal do usuário" YYYY-MM-DD HH:MM]: "${truncate(c.text, 70)}" (R.6.2 — só o USUÁRIO aceita incompleto)`);
+      pend.push(tr(LANG, `critério aberto sem marcador [aceito-incompleto: "citação literal do usuário" YYYY-MM-DD HH:MM]: "${truncate(c.text, 70)}" (R.6.2 — só o USUÁRIO aceita incompleto)`, `open criterion without marker [accepted-incomplete: "user's literal quote" YYYY-MM-DD HH:MM]: "${truncate(c.text, 70)}" (R.6.2 — only the USER accepts incomplete)`));
     }
-    if (c.checked && !hasTs(c.raw)) pend.push(`checkbox [x] sem timestamp: "${truncate(c.text, 70)}" (R.6)`);
+    if (c.checked && !hasTs(c.raw)) pend.push(tr(LANG, `checkbox [x] sem timestamp: "${truncate(c.text, 70)}" (R.6)`, `checkbox [x] without timestamp: "${truncate(c.text, 70)}" (R.6)`));
   }
   const dgp = P(spec.dir, 'digest.md');
-  if (!exists(dgp)) pend.push('digest.md ausente — obrigatório no fechamento (≤2.000 bytes; ver docs/rules/lifecycle.md)');
+  if (!exists(dgp)) pend.push(tr(LANG, 'digest.md ausente — obrigatório no fechamento (≤2.000 bytes; ver docs/rules/lifecycle.md)', 'digest.md missing — required at close (≤2,000 bytes; see docs/rules/lifecycle.md)'));
   else {
     const db = digestMeasure(read(dgp));
-    if (db > 2000) pend.push(`digest.md com ${db}B > 2000B (R.16) — re-gere dentro do cap: node scripts/specctl.mjs digest ${spec.id} --fix`);
+    if (db > 2000) pend.push(tr(LANG, `digest.md com ${db}B > 2000B (R.16) — re-gere dentro do cap: node scripts/specctl.mjs digest ${spec.id} --fix`, `digest.md is ${db}B > 2000B (R.16) — regenerate within the cap: node scripts/specctl.mjs digest ${spec.id} --fix`));
   }
   const jp = P(spec.dir, 'journal.md');
-  if (!exists(jp)) pend.push('journal.md ausente');
+  if (!exists(jp)) pend.push(tr(LANG, 'journal.md ausente', 'journal.md missing'));
   else {
     const jtxt = read(jp);
-    if (!hasCurrentConclusao(norm(jtxt))) pend.push('entrada [conclusão] ausente no LOG do journal (após uma reabertura, é preciso uma [conclusão] nova)');
+    if (!hasCurrentConclusao(norm(jtxt))) pend.push(tr(LANG, 'entrada [conclusão] ausente no LOG do journal (após uma reabertura, é preciso uma [conclusão] nova)', 'no [completion] entry in the journal LOG (after a reopen, a new [completion] is required)'));
     // SNAPSHOT ainda com placeholders do template = não reflete a conclusão (e o digest gerado herdaria o lixo)
     const snapEnd = jtxt.search(/^## LOG\b/m);
     const snap = snapEnd >= 0 ? jtxt.slice(0, snapEnd) : jtxt;
-    if (SNAP_PLACEHOLDER.test(snap)) pend.push('SNAPSHOT ainda com placeholders do template ("Onde tô/Próximo passo/Fase" não preenchidos) — sobrescreva o SNAPSHOT do journal refletindo a conclusão antes de fechar');
+    if (SNAP_PLACEHOLDER.test(snap)) pend.push(tr(LANG, 'SNAPSHOT ainda com placeholders do template ("Onde tô/Próximo passo/Fase" não preenchidos) — sobrescreva o SNAPSHOT do journal refletindo a conclusão antes de fechar', 'SNAPSHOT still has template placeholders ("Where I am/Next step/Phase" not filled in) — overwrite the journal SNAPSHOT to reflect completion before closing'));
   }
-  if ((pm.fields['Commit final'] || '—').trim() === '—') pend.push('**Commit final:** não preenchido (R.6.1)');
+  if ((pm.fields['Commit final'] || '—').trim() === '—') pend.push(tr(LANG, '**Commit final:** não preenchido (R.6.1)', '**Final commit:** not filled in (R.6.1)'));
   const feats = splitList(pm.fields.Features || '');
-  if (!feats.length) pend.push('**Features:** vazio — R.4/R.7 exigem vínculo a feature');
+  if (!feats.length) pend.push(tr(LANG, '**Features:** vazio — R.4/R.7 exigem vínculo a feature', '**Features:** empty — R.4/R.7 require a link to a feature'));
   for (const f of feats) {
     const r = featureConcludedOk(root, f, spec.id);
     if (!r.ok) pend.push(r.why);
   }
   if (pend.length) {
-    process.stderr.write(`archive BLOQUEADO — ${pend.length} pendência(s) em ${spec.id}:\n`);
+    process.stderr.write(tr(LANG, `archive BLOQUEADO — ${pend.length} pendência(s) em ${spec.id}:\n`, `archive BLOCKED — ${pend.length} pending item(s) in ${spec.id}:\n`));
     for (const p of pend) process.stderr.write(`  - ${p}\n`);
     process.exit(1);
   }
   archiveApply(root, spec);
-  out(`arquivada: docs/archive/${spec.id} (claim removido, INDEX regenerado)`);
+  out(tr(LANG, `arquivada: docs/archive/${spec.id} (claim removido, INDEX regenerado)`, `archived: docs/archive/${spec.id} (claim removed, INDEX regenerated)`));
 }
 
 // cauda de fechamento (compartilhada por archive e close): estampa Status/Concluída,
@@ -1093,9 +1101,9 @@ function archiveApply(root, spec) {
 function cmdDiscard(pos, flags) {
   const root = requireRoot();
   const spec = findSpec(root, pos[0]);
-  if (spec.phase !== 'active' && spec.phase !== 'future') die(`discard: ${spec.id} está em ${spec.phase}/ — nada a descartar`);
+  if (spec.phase !== 'active' && spec.phase !== 'future') die(tr(LANG, `discard: ${spec.id} está em ${spec.phase}/ — nada a descartar`, `discard: ${spec.id} is in ${spec.phase}/ — nothing to discard`));
   const motivo = flags.motivo;
-  if (!motivo) die('discard exige --motivo "..." (R.5: descarte preserva aprendizado com justificativa)');
+  if (!motivo) die(tr(LANG, 'discard exige --motivo "..." (R.5: descarte preserva aprendizado com justificativa)', 'discard requires --reason "..." (R.5: a discard keeps the learning with a rationale)'));
   const mainPath = P(spec.dir, 'main.md');
   let txt = read(mainPath);
   if (!hasSection(txt, 'Justificativa de descarte')) {
@@ -1107,16 +1115,16 @@ function cmdDiscard(pos, flags) {
   appendLog(spec.dir, 'conclusão', (l) => tr(l, `Descartada: ${motivo}`, `Discarded: ${motivo}`));
   // digest gerado AUTOMÁTICO (paridade com o close — nunca conte bytes à mão); refine depois via digest <id> --stdin
   const dgPath = P(spec.dir, 'digest.md');
-  let dgNote = 'digest preservado';
+  let dgNote = tr(LANG, 'digest preservado', 'digest kept');
   if (!exists(dgPath) || digestMeasure(read(dgPath)) > 2000) {
     writeFile(dgPath, genDigest(root, spec, { concluida: now() }));
-    dgNote = `digest gerado (${digestMeasure(read(dgPath))}B)`;
+    dgNote = tr(LANG, `digest gerado (${digestMeasure(read(dgPath))}B)`, `digest generated (${digestMeasure(read(dgPath))}B)`);
   }
   moveSpec(spec, root, 'discard');
   removeClaim(root, spec.id);
   cmdIndex({ quiet: true });
-  out(`descartada: docs/discard/${spec.id} (justificativa + ${dgNote}, INDEX regenerado)`);
-  out(`lições/gotchas: refine o digest se preciso — node scripts/specctl.mjs digest ${spec.id} --stdin`);
+  out(tr(LANG, `descartada: docs/discard/${spec.id} (justificativa + ${dgNote}, INDEX regenerado)`, `discarded: docs/discard/${spec.id} (rationale + ${dgNote}, INDEX regenerated)`));
+  out(tr(LANG, `lições/gotchas: refine o digest se preciso — node scripts/specctl.mjs digest ${spec.id} --stdin`, `lessons/gotchas: refine the digest if needed — node scripts/specctl.mjs digest ${spec.id} --stdin`));
 }
 
 // ---------------------------------------------------------------- features / taxonomy / index
@@ -1217,7 +1225,7 @@ function cmdIndex(opts = {}) {
   writeFile(P(root, 'docs', 'ARCHIVE-INDEX.md'), genArchiveIndex(root));
   writeFile(P(root, 'docs', 'PROGRAMS.md'), genProgramsIndex(root));
   writeFile(P(root, 'docs', 'DEFERRED.md'), genDeferred(root));
-  if (!opts.quiet) out('regenerados: docs/INDEX.md, docs/ARCHIVE-INDEX.md, docs/PROGRAMS.md e docs/DEFERRED.md (determinístico, sem timestamp)');
+  if (!opts.quiet) out(tr(LANG, 'regenerados: docs/INDEX.md, docs/ARCHIVE-INDEX.md, docs/PROGRAMS.md e docs/DEFERRED.md (determinístico, sem timestamp)', 'regenerated: docs/INDEX.md, docs/ARCHIVE-INDEX.md, docs/PROGRAMS.md and docs/DEFERRED.md (deterministic, no timestamp)'));
 }
 
 // ---------------------------------------------------------------- descoberta de backlog (next/programs/roadmap)
@@ -1318,25 +1326,25 @@ function lintJournal(root, jp, err, warn2, v3) {
   const relp = relOf(root, jp);
   const snapIdx = [];
   lines.forEach((l, i) => { if (/^## SNAPSHOT\b/.test(l)) snapIdx.push(i); });
-  if (!snapIdx.length) err(relp, 'journal sem heading "## SNAPSHOT" (formato §3.3)');
+  if (!snapIdx.length) err(relp, tr(LANG, 'journal sem heading "## SNAPSHOT" (formato §3)', 'journal without "## SNAPSHOT" heading (format §3)'));
   else {
-    if (snapIdx[0] >= 60) err(relp, `SNAPSHOT começa na linha ${snapIdx[0] + 1} — DEVE caber nas primeiras 60 linhas`);
-    if (snapIdx.length > 1) err(relp, 'heading "## SNAPSHOT" duplicado — SNAPSHOT é único e sobrescrito');
+    if (snapIdx[0] >= 60) err(relp, tr(LANG, `SNAPSHOT começa na linha ${snapIdx[0] + 1} — DEVE caber nas primeiras 60 linhas`, `SNAPSHOT starts at line ${snapIdx[0] + 1} — it MUST fit in the first 60 lines`));
+    if (snapIdx.length > 1) err(relp, tr(LANG, 'heading "## SNAPSHOT" duplicado — SNAPSHOT é único e sobrescrito', 'duplicate "## SNAPSHOT" heading — the SNAPSHOT is unique and overwritten'));
   }
   const logIdx = lines.findIndex((l) => /^## LOG\b/.test(l));
-  if (logIdx >= 0 && snapIdx.length && logIdx > 60) err(relp, `SNAPSHOT termina na linha ${logIdx + 1} — DEVE caber nas primeiras 60 linhas (o brief trunca em 60)`);
+  if (logIdx >= 0 && snapIdx.length && logIdx > 60) err(relp, tr(LANG, `SNAPSHOT termina na linha ${logIdx + 1} — DEVE caber nas primeiras 60 linhas (o brief trunca em 60)`, `SNAPSHOT ends at line ${logIdx + 1} — it MUST fit in the first 60 lines (brief truncates at 60)`));
   const snapStart = snapIdx.length ? snapIdx[0] : -1;
   const snapEnd = logIdx >= 0 ? logIdx : lines.length;
   lines.forEach((l, i) => {
     if ((/^#{1,6}\s.*TL;?DR/i.test(l) || /^\*\*TL;?DR/i.test(l)) && (i < snapStart || i >= snapEnd)) {
-      err(relp, `TL;DR fora do SNAPSHOT (linha ${i + 1}) — o único sumário sobrescrito é o SNAPSHOT`);
+      err(relp, tr(LANG, `TL;DR fora do SNAPSHOT (linha ${i + 1}) — o único sumário sobrescrito é o SNAPSHOT`, `TL;DR outside the SNAPSHOT (line ${i + 1}) — the only overwritten summary is the SNAPSHOT`));
     }
   });
   if (logIdx >= 0) {
     const entryRe = new RegExp(`^## \\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2} — \\[(${MARCO_ALT}|${ALL_LOG_TYPES_ALT})\\]`);
     for (let i = logIdx + 1; i < lines.length; i++) {
       if (/^##\s/.test(lines[i]) && !entryRe.test(lines[i])) {
-        rep(relp, `entrada de LOG inválida (linha ${i + 1}): "${truncate(lines[i], 60)}" — formato: ## YYYY-MM-DD HH:MM — [tipo] Título; tipos: ${LOG_TYPES.join(' ')}`);
+        rep(relp, tr(LANG, `entrada de LOG inválida (linha ${i + 1}): "${truncate(lines[i], 60)}" — formato: ## YYYY-MM-DD HH:MM — [tipo] Título; tipos: ${LOG_TYPES.join(' ')}`, `invalid LOG entry (line ${i + 1}): "${truncate(lines[i], 60)}" — format: ## YYYY-MM-DD HH:MM — [type] Title; types: ${LOG_TYPES.map((t) => LOG_TYPE_EN[t]).join(' ')}`));
       }
     }
   }
@@ -1351,124 +1359,124 @@ function runLint(root, opts = {}) {
 
   // manifesto
   const manPath = P(root, 'docs', '.spec-system.json');
-  if (!exists(manPath)) warn('docs/.spec-system.json', 'manifesto ausente — modo compatibilidade v3 (rode a skill spec-system-init, modo UPGRADE)');
-  else { try { JSON.parse(read(manPath)); } catch (e) { err('docs/.spec-system.json', `JSON inválido: ${e.message}`); } }
+  if (!exists(manPath)) warn('docs/.spec-system.json', tr(LANG, 'manifesto ausente — modo compatibilidade v3 (rode a skill spec-system-init, modo UPGRADE)', 'manifest missing — v3 compatibility mode (run the spec-system-init skill, UPGRADE mode)'));
+  else { try { JSON.parse(read(manPath)); } catch (e) { err('docs/.spec-system.json', tr(LANG, `JSON inválido: ${e.message}`, `invalid JSON: ${e.message}`)); } }
 
   // estrutura de pastas
   for (const d of ['features', 'active', 'future', 'archive', 'discard', 'claims', 'programs']) {
-    if (!isDir(P(root, 'docs', d))) err(`docs/${d}/`, 'pasta obrigatória ausente (estrutura v4 — rode specctl init)');
+    if (!isDir(P(root, 'docs', d))) err(`docs/${d}/`, tr(LANG, 'pasta obrigatória ausente (estrutura v4 — rode specctl init)', 'required folder missing (v4 structure — run specctl init)'));
   }
 
   // taxonomy + features
   const tax = parseTaxonomy(root);
   const feats = featureFiles(root);
-  if (!tax && feats.length) warn('docs/TAXONOMY.md', 'ausente — R.13 exige vocabulário canônico de áreas');
+  if (!tax && feats.length) warn('docs/TAXONOMY.md', tr(LANG, 'ausente — R.13 exige vocabulário canônico de áreas', 'missing — R.13 requires a canonical area vocabulary'));
   const decSeen = new Map();
   for (const f of feats) {
     const relp = relOf(root, f.path);
     const txt = norm(readSafe(f.path));
-    if (!/^\*\*Keywords:\*\*/m.test(txt)) err(relp, 'feature sem linha **Keywords:** (formato §4)');
-    if (!hasField(txt, 'Resumo')) err(relp, 'feature sem linha **Resumo:** (formato §4)');
+    if (!/^\*\*Keywords:\*\*/m.test(txt)) err(relp, tr(LANG, 'feature sem linha **Keywords:** (formato §5)', 'feature without a **Keywords:** line (format §5)'));
+    if (!hasField(txt, 'Resumo')) err(relp, tr(LANG, 'feature sem linha **Resumo:** (formato §5)', 'feature without a **Summary:** line (format §5)'));
     for (const h of ['Specs desta feature', 'Estado atual', 'Decisões arquiteturais ativas', 'Gotchas']) {
-      if (!hasSection(txt, h)) err(relp, `seção obrigatória ausente: "## ${sectionLabel(h)}" (formato §4)`);
+      if (!hasSection(txt, h)) err(relp, tr(LANG, `seção obrigatória ausente: "## ${sectionLabel(h)}" (formato §5)`, `required section missing: "## ${sectionLabel(h)}" (format §5)`));
     }
-    if (/###\s+(?:Em execução|In progress)/.test(txt)) warn(relp, 'seção "Em execução" foi removida na v4 — o trabalho em voo vive em docs/claims/ (specctl activate)');
+    if (/###\s+(?:Em execução|In progress)/.test(txt)) warn(relp, tr(LANG, 'seção "Em execução" foi removida na v4 — o trabalho em voo vive em docs/claims/ (specctl activate)', 'section "In progress" was removed in v4 — in-flight work lives in docs/claims/ (specctl activate)'));
     for (const m of stripFences(txt).matchAll(/^\s*-\s*(?:\*\*)?(DEC-\d{8}-\d{4}(?:-[a-z0-9-]+)?)/gm)) { // DEC de EXEMPLO em fence não conta
-      if (decSeen.has(m[1])) err(relp, `DEC-id duplicado: ${m[1]} (também definido em ${decSeen.get(m[1])})`);
+      if (decSeen.has(m[1])) err(relp, tr(LANG, `DEC-id duplicado: ${m[1]} (também definido em ${decSeen.get(m[1])})`, `duplicate DEC-id: ${m[1]} (also defined in ${decSeen.get(m[1])})`));
       else decSeen.set(m[1], relp);
     }
     // features/<area>.md NÃO tem teto: é memória viva por área, auto-carregada no N1, e o nº de features do sistema é ilimitado. Rollup (specctl rollup <area>) é ferramenta MANUAL, opcional — o autor decide quando enxugar o auto-load; nada é lintado nem bloqueado por tamanho de feature.
-    if (tax && !tax.has(f.area)) err(relp, `feature '${f.area}' não coberta pela TAXONOMY.md — R.13: adicione a linha '- ${f.area} — <definição>'`);
+    if (tax && !tax.has(f.area)) err(relp, tr(LANG, `feature '${f.area}' não coberta pela TAXONOMY.md — R.13: adicione a linha '- ${f.area} — <definição>'`, `feature '${f.area}' not covered by TAXONOMY.md — R.13: add the line '- ${f.area} — <definition>'`));
   }
 
   // SPECs
   for (const spec of listSpecs(root)) {
     const relDir = `docs/${spec.phase}/${spec.id}`;
-    if (!SPEC_RE.test(spec.id)) { err(relDir, 'nome de pasta fora do padrão SPEC-YYYYMMDD-HHMM-slug (R.1)'); continue; }
+    if (!SPEC_RE.test(spec.id)) { err(relDir, tr(LANG, 'nome de pasta fora do padrão SPEC-YYYYMMDD-HHMM-slug (R.1)', 'folder name does not match SPEC-YYYYMMDD-HHMM-slug (R.1)')); continue; }
     const mainPath = P(spec.dir, 'main.md');
     const mainRel = `${relDir}/main.md`;
-    if (!exists(mainPath)) { err(relDir, 'main.md ausente (arquivo canônico — R.3)'); continue; }
+    if (!exists(mainPath)) { err(relDir, tr(LANG, 'main.md ausente (arquivo canônico — R.3)', 'main.md missing (canonical file — R.3)')); continue; }
     const pm = parseMain(read(mainPath));
     for (const k of ['Status', 'Porte', 'Owner', 'Criada', 'Keywords', 'Features', 'Resumo']) {
-      if (!(k in pm.fields) || pm.fields[k] === '') err(mainRel, `campo obrigatório ausente/vazio: **${k}:** (formato §3.1)`);
+      if (!(k in pm.fields) || pm.fields[k] === '') err(mainRel, tr(LANG, `campo obrigatório ausente/vazio: **${k}:** (formato §1)`, `required field missing/empty: **${fieldLabel(k)}:** (format §1)`));
     }
     const st = pm.fields.Status;
-    if (st && !STATUS_ENUM.includes(st)) err(mainRel, `Status inválido '${st}' — enum: ${STATUS_ENUM.join(' | ')}`);
-    if (pm.fields.Porte && !['P', 'M', 'G'].includes(pm.fields.Porte)) err(mainRel, `Porte inválido '${pm.fields.Porte}' — use P | M | G`);
-    if (pm.fields.Owner === '—') err(mainRel, 'Owner obrigatório (use @handle) — formato §3.1');
+    if (st && !STATUS_ENUM.includes(st)) err(mainRel, tr(LANG, `Status inválido '${st}' — enum: ${STATUS_ENUM.join(' | ')}`, `invalid Status '${st}' — enum: ${STATUS_ENUM.join(' | ')}`));
+    if (pm.fields.Porte && !['P', 'M', 'G'].includes(pm.fields.Porte)) err(mainRel, tr(LANG, `Porte inválido '${pm.fields.Porte}' — use P | M | G`, `invalid Size '${pm.fields.Porte}' — use S | M | L`));
+    if (pm.fields.Owner === '—') err(mainRel, tr(LANG, 'Owner obrigatório (use @handle) — formato §1', 'Owner is required (use @handle) — format §1'));
     if (st && STATUS_ENUM.includes(st) && !PHASE_STATUS[spec.phase].includes(st)) {
-      err(mainRel, `coerência pasta↔status violada: ${spec.phase}/ exige status ${PHASE_STATUS[spec.phase].join(' ou ')}, encontrado '${st}'`);
+      err(mainRel, tr(LANG, `coerência pasta↔status violada: ${spec.phase}/ exige status ${PHASE_STATUS[spec.phase].join(' ou ')}, encontrado '${st}'`, `folder↔status mismatch: ${spec.phase}/ requires status ${PHASE_STATUS[spec.phase].join(' or ')}, found '${st}'`));
     }
     const tm = /^# SPEC-(\d{8}-\d{4})\b/.exec(pm.lines[0] || '');
-    if (!tm) warn(mainRel, 'título fora do formato "# SPEC-YYYYMMDD-HHMM: <Título>"');
-    else if (`SPEC-${tm[1]}` !== idPrefix(spec.id)) warn(mainRel, `título (${tm[1]}) não bate com o id da pasta (${spec.id})`);
+    if (!tm) warn(mainRel, tr(LANG, 'título fora do formato "# SPEC-YYYYMMDD-HHMM: <Título>"', 'title does not match "# SPEC-YYYYMMDD-HHMM: <Title>"'));
+    else if (`SPEC-${tm[1]}` !== idPrefix(spec.id)) warn(mainRel, tr(LANG, `título (${tm[1]}) não bate com o id da pasta (${spec.id})`, `title (${tm[1]}) does not match the folder id (${spec.id})`));
     for (const t of ['Objetivo', 'Implementação']) {
-      if (!sectionRange(pm, (x) => x === t || x.startsWith(t + ' '))) err(mainRel, `seção obrigatória ausente: ## ${t}`);
+      if (!sectionRange(pm, (x) => x === t || x.startsWith(t + ' '))) err(mainRel, tr(LANG, `seção obrigatória ausente: ## ${t}`, `required section missing: ## ${sectionLabel(t)}`));
     }
     const esc = sectionRange(pm, (x) => x === 'Escopo' || x.startsWith('Escopo'));
-    if (!esc) err(mainRel, 'seção obrigatória ausente: ## Escopo (DENTRO/FORA)');
+    if (!esc) err(mainRel, tr(LANG, 'seção obrigatória ausente: ## Escopo (DENTRO/FORA)', 'required section missing: ## Scope (IN/OUT)'));
     else {
       const body = pm.lines.slice(esc[0], esc[1]).join('\n');
-      if (!(body.includes('DENTRO') || /\*\*IN:\*\*/.test(body)) || !(body.includes('FORA') || /\*\*OUT:\*\*/.test(body))) warn(mainRel, 'seção Escopo sem blocos DENTRO/FORA explícitos');
+      if (!(body.includes('DENTRO') || /\*\*IN:\*\*/.test(body)) || !(body.includes('FORA') || /\*\*OUT:\*\*/.test(body))) warn(mainRel, tr(LANG, 'seção Escopo sem blocos DENTRO/FORA explícitos', 'Scope section without explicit IN/OUT blocks'));
     }
     const specFeats = splitList(pm.fields.Features || '');
     if (tax) {
       for (const ft of specFeats) {
-        if (!tax.has(ft)) err(mainRel, `feature '${ft}' não existe na TAXONOMY.md (R.4/R.13)`);
+        if (!tax.has(ft)) err(mainRel, tr(LANG, `feature '${ft}' não existe na TAXONOMY.md (R.4/R.13)`, `feature '${ft}' does not exist in TAXONOMY.md (R.4/R.13)`));
       }
     } else if (specFeats.length) {
-      warn(mainRel, 'docs/TAXONOMY.md ausente — vínculo **Features:** não validável (R.4); crie a TAXONOMY');
+      warn(mainRel, tr(LANG, 'docs/TAXONOMY.md ausente — vínculo **Features:** não validável (R.4); crie a TAXONOMY', 'docs/TAXONOMY.md missing — **Features:** link cannot be validated (R.4); create the TAXONOMY'));
     }
-    if (!specFeats.length && st && st !== 'draft') warn(mainRel, '**Features:** vazio — R.4 exige vínculo a feature antes da ativação');
+    if (!specFeats.length && st && st !== 'draft') warn(mainRel, tr(LANG, '**Features:** vazio — R.4 exige vínculo a feature antes da ativação', '**Features:** empty — R.4 requires a feature link before activation'));
     // checkboxes do main.md (qualquer [x] sem timestamp = ERRO — R.6)
     pm.lines.forEach((l) => {
       const m = /^\s*-\s*\[(x|X)\]\s*(.*)$/.exec(l);
-      if (m && !hasTs(l)) { const msg = `checkbox [x] sem timestamp (R.6): "${truncate(m[2], 60)}"`; if (spec.v3) warn(mainRel, msg, { stage1: true }); else err(mainRel, msg); }
+      if (m && !hasTs(l)) { const msg = tr(LANG, `checkbox [x] sem timestamp (R.6): "${truncate(m[2], 60)}"`, `checkbox [x] without timestamp (R.6): "${truncate(m[2], 60)}"`); if (spec.v3) warn(mainRel, msg, { stage1: true }); else err(mainRel, msg); }
     });
     const crit = getCriteria(pm);
     const porteLint = (pm.fields.Porte || 'M').toUpperCase();
-    if (crit === null) err(mainRel, 'seção obrigatória ausente: ## Critério de aceite');
+    if (crit === null) err(mainRel, tr(LANG, 'seção obrigatória ausente: ## Critério de aceite', 'required section missing: ## Acceptance criteria'));
     else {
-      if (!crit.length) warn(mainRel, 'Critério de aceite sem checkboxes — o contrato R.6.2 está vazio');
+      if (!crit.length) warn(mainRel, tr(LANG, 'Critério de aceite sem checkboxes — o contrato R.6.2 está vazio', 'Acceptance criteria without checkboxes — the R.6.2 contract is empty'));
       // D1 — gramática por porte: P não usa verify: (evidência via check); M/G mantêm verify:
       // Só vale para SPECs em construção (active/future); archive/discard são históricas e imutáveis
       // (SPECs P v4.0 com verify: foram legais quando fechadas — não reprovar retroativamente). v3-compat idem.
       if (porteLint === 'P' && (spec.phase === 'active' || spec.phase === 'future') && !spec.v3) {
         for (const c of crit) {
-          if (hasVerifyTag(c.raw)) err(mainRel, `porte P não usa verify: — use specctl check (ou escalate para M): "${truncate(c.text, 60)}"`);
+          if (hasVerifyTag(c.raw)) err(mainRel, tr(LANG, `porte P não usa verify: — use specctl check (ou escalate para M): "${truncate(c.text, 60)}"`, `size S does not use verify: — use specctl check (or escalate to M): "${truncate(c.text, 60)}"`));
         }
       }
       for (const c of crit) {
         if (c.checked) {
           const evid = (hasTs(c.raw) && hasCommitEv(c.raw)) || hasVerifyTag(c.raw) || hasEvidenceTag(c.raw);
           if (!evid) {
-            const msg = `critério [x] sem evidência (timestamp+commit, verify: ou evidence:): "${truncate(c.text, 60)}" (R.6.2)`;
+            const msg = tr(LANG, `critério [x] sem evidência (timestamp+commit, verify: ou evidence:): "${truncate(c.text, 60)}" (R.6.2)`, `criterion [x] without evidence (timestamp+commit, verify: or evidence:): "${truncate(c.text, 60)}" (R.6.2)`);
             if (spec.phase === 'archive' && !spec.v3) err(mainRel, msg); else warn(mainRel, msg, { stage1: true });
           }
         } else if (spec.phase === 'archive') {
           const critErr = spec.v3 ? (mm) => warn(mainRel, mm, { stage1: true }) : (mm) => err(mainRel, mm);
-          if (!hasAceitoTag(c.raw)) critErr(`critério aberto em archive sem marcador [aceito-incompleto: "citação" YYYY-MM-DD HH:MM]: "${truncate(c.text, 60)}" (R.6.2 — só o USUÁRIO aceita incompleto)`);
-          else if (!ACEITO_RE.test(c.raw)) critErr(`marcador [aceito-incompleto: ...] malformado — exige citação entre aspas + timestamp: "${truncate(c.text, 60)}"`);
+          if (!hasAceitoTag(c.raw)) critErr(tr(LANG, `critério aberto em archive sem marcador [aceito-incompleto: "citação" YYYY-MM-DD HH:MM]: "${truncate(c.text, 60)}" (R.6.2 — só o USUÁRIO aceita incompleto)`, `open criterion in archive without marker [accepted-incomplete: "quote" YYYY-MM-DD HH:MM]: "${truncate(c.text, 60)}" (R.6.2 — only the USER accepts incomplete)`));
+          else if (!ACEITO_RE.test(c.raw)) critErr(tr(LANG, `marcador [aceito-incompleto: ...] malformado — exige citação entre aspas + timestamp: "${truncate(c.text, 60)}"`, `malformed [accepted-incomplete: ...] marker — requires a quoted citation + timestamp: "${truncate(c.text, 60)}"`));
         }
       }
     }
     if (spec.phase === 'archive' && (pm.fields['Commit final'] || '—').trim() === '—') {
-      err(mainRel, '**Commit final:** — em SPEC arquivada (R.6.1: registre o hash final)');
+      err(mainRel, tr(LANG, '**Commit final:** — em SPEC arquivada (R.6.1: registre o hash final)', '**Final commit:** — in an archived SPEC (R.6.1: record the final hash)'));
     }
     if (spec.phase === 'archive' || spec.phase === 'discard') {
       const dg = P(spec.dir, 'digest.md');
-      if (!exists(dg)) err(`${relDir}/digest.md`, 'digest.md obrigatório no fechamento (archive E discard) — ≤2.000 bytes');
+      if (!exists(dg)) err(`${relDir}/digest.md`, tr(LANG, 'digest.md obrigatório no fechamento (archive E discard) — ≤2.000 bytes', 'digest.md is required at close (archive AND discard) — ≤2,000 bytes'));
       else {
         const b = digestMeasure(read(dg)); // 2c: LF + comentários HTML descontados
-        if (b > 2000) err(`${relDir}/digest.md`, `orçamento excedido: ${b} > 2000 bytes (R.16) — digest é o resumo denso, não o journal`);
+        if (b > 2000) err(`${relDir}/digest.md`, tr(LANG, `orçamento excedido: ${b} > 2000 bytes (R.16) — digest é o resumo denso, não o journal`, `budget exceeded: ${b} > 2000 bytes (R.16) — the digest is the dense summary, not the journal`));
       }
     }
     if (spec.phase === 'discard' && !hasSection(pm.raw, 'Justificativa de descarte')) {
-      err(mainRel, 'SPEC descartada sem seção "## Justificativa de descarte" (R.5)');
+      err(mainRel, tr(LANG, 'SPEC descartada sem seção "## Justificativa de descarte" (R.5)', 'discarded SPEC without a "## Discard rationale" section (R.5)'));
     }
     const jp = P(spec.dir, 'journal.md');
     const needJournal = spec.phase === 'active' || spec.phase === 'archive' || spec.phase === 'discard' || (spec.phase === 'future' && st === 'paused');
-    if (needJournal && !exists(jp)) err(`${relDir}/journal.md`, 'journal.md ausente (arquivo canônico — R.3; pausada mantém main+journal)');
+    if (needJournal && !exists(jp)) err(`${relDir}/journal.md`, tr(LANG, 'journal.md ausente (arquivo canônico — R.3; pausada mantém main+journal)', 'journal.md missing (canonical file — R.3; a paused SPEC keeps main+journal)'));
     if (exists(jp)) lintJournal(root, jp, err, warn, spec.v3);
     for (const key of POINTER_KEYS) {
       const v = pm.fields[key];
@@ -1476,19 +1484,19 @@ function runLint(root, opts = {}) {
       const target = v.split(/\s+\(/)[0].trim().replace(/^`|`$/g, '');
       if (!target) continue;
       if (!exists(P(spec.dir, target)) && !exists(P(root, target))) {
-        warn(mainRel, `ponteiro **${key}:** aponta para arquivo inexistente: ${target}`, { stage1: true });
+        warn(mainRel, tr(LANG, `ponteiro **${key}:** aponta para arquivo inexistente: ${target}`, `pointer **${key}:** points to a missing file: ${target}`), { stage1: true });
       }
     }
     const ws = pm.fields.Workspace;
     if (ws && ws !== '—' && ws !== 'inline' && !exists(P(root, ws)) && spec.phase === 'active') {
-      warn(mainRel, `**Workspace:** '${ws}' não existe no repositório`);
+      warn(mainRel, tr(LANG, `**Workspace:** '${ws}' não existe no repositório`, `**Workspace:** '${ws}' does not exist in the repository`));
     }
     const prdPath = P(spec.dir, 'prd.md');
     if (exists(prdPath) && crit) {
       const rfs = extractRfs(read(prdPath));
       const covered = coveredRfs(crit.map((c) => c.raw).join('\n'));
       for (const n of [...rfs].sort((a, b) => a - b)) {
-        if (!covered.has(n)) err(mainRel, `RF-${n} do prd.md sem cobertura no Critério de aceite — use "(cobre RF-${n})" em ≥1 critério (rastreabilidade §3.2)`);
+        if (!covered.has(n)) err(mainRel, tr(LANG, `RF-${n} do prd.md sem cobertura no Critério de aceite — use "(cobre RF-${n})" em ≥1 critério (rastreabilidade §3.2)`, `FR-${n} from prd.md not covered by the Acceptance criteria — use "(covers FR-${n})" in ≥1 criterion (traceability §3.2)`));
       }
     }
   }
@@ -1500,7 +1508,7 @@ function runLint(root, opts = {}) {
     const fp = P(root, ...f.split('/'));
     if (exists(fp)) {
       const b = lfBytes(read(fp)); // 2c: bytes LF-normalizados (strip CR/BOM)
-      if (b > max) E.push({ f, m: `orçamento excedido: ${b} > ${max} bytes (R.16) — mova conteúdo para camada mais profunda (rollup, não corte)` });
+      if (b > max) E.push({ f, m: tr(LANG, `orçamento excedido: ${b} > ${max} bytes (R.16) — mova conteúdo para camada mais profunda (rollup, não corte)`, `budget exceeded: ${b} > ${max} bytes (R.16) — move content to a deeper layer (rollup, do not cut)`) });
     }
   }
 
@@ -1510,42 +1518,42 @@ function runLint(root, opts = {}) {
     const phaseOf = new Map(allSpecs.map((s) => [s.id, s.phase]));
     const statusOf = makeStatusOf(allSpecs);
     for (const id of parseRoadmap(root)) {
-      if (!phaseOf.has(id)) { warn('docs/ROADMAP.md', `cita ${id} que NÃO EXISTE (typo?) — a entrada é ignorada pelo specctl next`); continue; }
+      if (!phaseOf.has(id)) { warn('docs/ROADMAP.md', tr(LANG, `cita ${id} que NÃO EXISTE (typo?) — a entrada é ignorada pelo specctl next`, `cites ${id}, which does NOT EXIST (typo?) — specctl next ignores the entry`)); continue; }
       const ph = phaseOf.get(id), st = statusOf(id);
-      if (ph === 'archive' || ph === 'discard') warn('docs/ROADMAP.md', `cita ${id} já em ${ph}/ — remova a linha (entrada morta, ignorada pelo next)`);
-      else if (ph === 'future' && st === 'paused') warn('docs/ROADMAP.md', `cita ${id} PAUSADA — retome via specctl resume ou remova do roadmap (paused não aparece no next)`);
+      if (ph === 'archive' || ph === 'discard') warn('docs/ROADMAP.md', tr(LANG, `cita ${id} já em ${ph}/ — remova a linha (entrada morta, ignorada pelo next)`, `cites ${id}, already in ${ph}/ — remove the line (dead entry, ignored by next)`));
+      else if (ph === 'future' && st === 'paused') warn('docs/ROADMAP.md', tr(LANG, `cita ${id} PAUSADA — retome via specctl resume ou remova do roadmap (paused não aparece no next)`, `cites ${id}, which is PAUSED — resume via specctl resume or remove it from the roadmap (paused does not show in next)`));
     }
   }
   // INDEX/ARCHIVE-INDEX/DEFERRED gerados e idempotentes (DEFERRED só warn quando ausente — repos v4.0/4.1 antigos não têm)
   for (const [f, gen] of [['docs/INDEX.md', genIndex], ['docs/ARCHIVE-INDEX.md', genArchiveIndex], ['docs/DEFERRED.md', genDeferred]]) {
     const fp = P(root, ...f.split('/'));
-    if (!exists(fp)) { W.push({ f, m: 'ausente — rode: node scripts/specctl.mjs index' }); continue; }
+    if (!exists(fp)) { W.push({ f, m: tr(LANG, 'ausente — rode: node scripts/specctl.mjs index', 'missing — run: node scripts/specctl.mjs index') }); continue; }
     const txt = read(fp);
-    if (!hasGenMark(txt)) E.push({ f, m: `marcador "${GERADO_MARK}" ausente — arquivo é GERADO, não edite à mão` });
-    else if (norm(gen(root)) !== norm(txt)) E.push({ f, m: 'desatualizado (regeneração difere) — rode: node scripts/specctl.mjs index' });
+    if (!hasGenMark(txt)) E.push({ f, m: tr(LANG, `marcador "${GERADO_MARK}" ausente — arquivo é GERADO, não edite à mão`, `marker "${GERADO_MARK_EN}" missing — the file is GENERATED, do not edit it by hand`) });
+    else if (norm(gen(root)) !== norm(txt)) E.push({ f, m: tr(LANG, 'desatualizado (regeneração difere) — rode: node scripts/specctl.mjs index', 'out of date (regeneration differs) — run: node scripts/specctl.mjs index') });
   }
 
   // secret-scan em docs/ (R.15) — ERRO
   for (const fp of walkFiles(P(root, 'docs'), { exts: ['.md', '.txt', '.json', '.yml', '.yaml'] })) {
     for (const h of scanSecrets(readSafe(fp))) {
-      E.push({ f: relOf(root, fp), m: `segredo detectado (${h.tipo}) na linha ${h.line} — R.15: substitua por <REDACTED:${h.tipo}> e ROTACIONE a credencial` });
+      E.push({ f: relOf(root, fp), m: tr(LANG, `segredo detectado (${h.tipo}) na linha ${h.line} — R.15: substitua por <REDACTED:${h.tipo}> e ROTACIONE a credencial`, `secret detected (${h.tipo}) at line ${h.line} — R.15: replace with <REDACTED:${h.tipo}> and ROTATE the credential`) });
     }
   }
 
   if (opts.targetMain) {
     const act = activeSpecs(root);
-    if (act.length) E.push({ f: 'docs/active/', m: `R.2: docs/active/ deve estar vazio em main — encontrado: ${act.map((s) => s.id).join(', ')}` });
+    if (act.length) E.push({ f: 'docs/active/', m: tr(LANG, `R.2: docs/active/ deve estar vazio em main — encontrado: ${act.map((s) => s.id).join(', ')}`, `R.2: docs/active/ must be empty on main — found: ${act.map((s) => s.id).join(', ')}`) });
   }
   return { E, W };
 }
 function reportLint(E, W) {
   // tom (2b): erros primeiro; avisos DEPOIS, sob header que deixa claro que não bloqueiam
-  for (const e of E) process.stderr.write(`ERRO  ${e.f}: ${e.m}\n`);
+  for (const e of E) process.stderr.write(tr(LANG, `ERRO  ${e.f}: ${e.m}\n`, `ERROR   ${e.f}: ${e.m}\n`));
   if (W.length) {
-    process.stdout.write('AVISOS (não bloqueiam archive/close/CI):\n');
-    for (const w of W) process.stdout.write(`AVISO ${w.f}: ${w.m}\n`);
+    process.stdout.write(tr(LANG, 'AVISOS (não bloqueiam archive/close/CI):\n', 'WARNINGS (do not block archive/close/CI):\n'));
+    for (const w of W) process.stdout.write(tr(LANG, `AVISO ${w.f}: ${w.m}\n`, `WARNING ${w.f}: ${w.m}\n`));
   }
-  process.stdout.write(`\nlint: ${E.length} erro(s), ${W.length} aviso(s)\n`);
+  process.stdout.write(tr(LANG, `\nlint: ${E.length} erro(s), ${W.length} aviso(s)\n`, `\nlint: ${E.length} error(s), ${W.length} warning(s)\n`));
 }
 function cmdLint(flags) {
   const root = requireRoot();
@@ -1554,7 +1562,7 @@ function cmdLint(flags) {
   // --strict promove a erro APENAS avisos não-stage1 (§8: ponteiro ausente e [x] sem evidência em active/ ficam warn no 1º release; tamanho de feature não é mais lintado)
   const strictW = W.filter((w) => !w.stage1);
   const fail = E.length > 0 || (flags.strict && strictW.length > 0);
-  if (flags.strict && !E.length && strictW.length) process.stdout.write('(--strict: avisos contam como falha — exceto avisos de 1º release do §8)\n');
+  if (flags.strict && !E.length && strictW.length) process.stdout.write(tr(LANG, '(--strict: avisos contam como falha — exceto avisos de 1º release do §8)\n', '(--strict: warnings count as failure — except §8 first-release warnings)\n'));
   process.exit(fail ? 1 : 0);
 }
 
@@ -1592,13 +1600,13 @@ function auditDeps(root, E, W) {
   const specs = listSpecs(root);
   const statusOf = makeStatusOf(specs);
   for (const prog of parsePrograms(root)) {
-    if (!prog.nodes.length) { W.push({ f: prog.rel, m: 'programa sem nós (- SPEC-<id> | depende de: ...)' }); continue; }
-    if (/^\s*(\*\*)?(?:Bloqueia|Blocks)/m.test(prog.txt)) W.push({ f: prog.rel, m: '"Bloqueia"/ordem são DERIVADOS do DAG — não escreva no manifesto (R.14)' });
+    if (!prog.nodes.length) { W.push({ f: prog.rel, m: tr(LANG, 'programa sem nós (- SPEC-<id> | depende de: ...)', 'program without nodes (- SPEC-<id> | depends on: ...)') }); continue; }
+    if (/^\s*(\*\*)?(?:Bloqueia|Blocks)/m.test(prog.txt)) W.push({ f: prog.rel, m: tr(LANG, '"Bloqueia"/ordem são DERIVADOS do DAG — não escreva no manifesto (R.14)', '"Blocks"/order are DERIVED from the DAG — do not write them in the manifest (R.14)') });
     const known = new Map(prog.nodes.map((n) => [n.id, n]));
     for (const n of prog.nodes) {
-      if (statusOf(n.id) === null) E.push({ f: prog.rel, m: `nó inexistente no repositório: ${n.id} (R.14: todo nó do programa é uma SPEC real)` });
+      if (statusOf(n.id) === null) E.push({ f: prog.rel, m: tr(LANG, `nó inexistente no repositório: ${n.id} (R.14: todo nó do programa é uma SPEC real)`, `node does not exist in the repository: ${n.id} (R.14: every program node is a real SPEC)`) });
       for (const d of n.deps) {
-        if (statusOf(d) === null && !known.has(d)) E.push({ f: prog.rel, m: `dependência inexistente: ${n.id} depende de ${d}` });
+        if (statusOf(d) === null && !known.has(d)) E.push({ f: prog.rel, m: tr(LANG, `dependência inexistente: ${n.id} depende de ${d}`, `missing dependency: ${n.id} depends on ${d}`) });
       }
     }
     // ciclos (DFS)
@@ -1616,14 +1624,14 @@ function auditDeps(root, E, W) {
       color.set(id, 2); stack.pop();
     };
     for (const n of prog.nodes) { if (!color.has(n.id)) visit(n.id); if (cycle) break; }
-    if (cycle) E.push({ f: prog.rel, m: `ciclo de dependências detectado: ${cycle.join(' → ')} (R.14: DAG obrigatório)` });
+    if (cycle) E.push({ f: prog.rel, m: tr(LANG, `ciclo de dependências detectado: ${cycle.join(' → ')} (R.14: DAG obrigatório)`, `dependency cycle detected: ${cycle.join(' → ')} (R.14: a DAG is required)`) });
     // coerência status × DAG
     for (const n of prog.nodes) {
       const st = statusOf(n.id);
       for (const d of n.deps) {
         const ds = statusOf(d);
-        if (st === 'done' && ds && ds !== 'done') W.push({ f: prog.rel, m: `incoerência status×DAG: ${n.id} (done) depende de ${d} (${ds})` });
-        if (st === 'active' && ds === 'discarded') W.push({ f: prog.rel, m: `incoerência status×DAG: ${n.id} (active) depende de ${d} (discarded)` });
+        if (st === 'done' && ds && ds !== 'done') W.push({ f: prog.rel, m: tr(LANG, `incoerência status×DAG: ${n.id} (done) depende de ${d} (${ds})`, `status×DAG mismatch: ${n.id} (done) depends on ${d} (${ds})`) });
+        if (st === 'active' && ds === 'discarded') W.push({ f: prog.rel, m: tr(LANG, `incoerência status×DAG: ${n.id} (active) depende de ${d} (discarded)`, `status×DAG mismatch: ${n.id} (active) depends on ${d} (discarded)`) });
       }
     }
   }
@@ -1631,7 +1639,7 @@ function auditDeps(root, E, W) {
 const PIPELINE_ART_RE = /^docs\/(active|future|archive|discard)\/(SPEC-[^/]+)\/((?:\d+_task(?:_review)?|tasks|prd|techspec|bugs|qa-report|review-report|bugfix-report)\.md)$/;
 
 function auditPr(root, base, E, W) {
-  if (!base) die('audit --pr exige --base <sha> (base do PR) — sem base resolvível o gate falha FECHADO');
+  if (!base) die(tr(LANG, 'audit --pr exige --base <sha> (base do PR) — sem base resolvível o gate falha FECHADO', 'audit --pr requires --base <sha> (PR base) — without a resolvable base the gate fails CLOSED'));
   git(['rev-parse', '--verify', `${base}^{commit}`], root);
   const diff = git(['diff', '--name-status', '-M', `${base}...HEAD`], root);
   const removedActive = new Set();
@@ -1660,25 +1668,25 @@ function auditPr(root, base, E, W) {
   for (const id of removedActive) {
     const loc = specs.find((s) => s.id === id);
     if (loc && loc.phase === 'active') continue; // reorganização interna, segue ativa
-    if (!loc) { E.push({ f: `docs/active/${id}`, m: 'SPEC saiu de docs/active/ e NÃO existe mais no repositório — R.5: nunca deletar; destinos válidos: archive/ (done), discard/ (com justificativa) ou future/ (pausada)' }); continue; }
+    if (!loc) { E.push({ f: `docs/active/${id}`, m: tr(LANG, 'SPEC saiu de docs/active/ e NÃO existe mais no repositório — R.5: nunca deletar; destinos válidos: archive/ (done), discard/ (com justificativa) ou future/ (pausada)', 'SPEC left docs/active/ and NO longer exists in the repository — R.5: never delete; valid destinations: archive/ (done), discard/ (with rationale) or future/ (paused)') }); continue; }
     const pm = parseMain(readSafe(P(loc.dir, 'main.md')));
     const relMain = `docs/${loc.phase}/${id}/main.md`;
     if (loc.phase === 'archive') {
-      if (!exists(P(loc.dir, 'digest.md'))) E.push({ f: relMain, m: 'archive sem digest.md — bloqueado (fechamento §3.4)' });
+      if (!exists(P(loc.dir, 'digest.md'))) E.push({ f: relMain, m: tr(LANG, 'archive sem digest.md — bloqueado (fechamento §3.4)', 'archive without digest.md — blocked (close §3.4)') });
       const crit = getCriteria(pm) || [];
       for (const c of crit) {
-        if (!c.checked && !ACEITO_RE.test(c.raw)) E.push({ f: relMain, m: `archive com critério aberto sem [aceito-incompleto: ...]: "${truncate(c.text, 60)}" (R.6.2)` });
-        if (c.checked && !((hasTs(c.raw) && hasCommitEv(c.raw)) || hasVerifyTag(c.raw) || hasEvidenceTag(c.raw))) E.push({ f: relMain, m: `archive com critério [x] sem evidência: "${truncate(c.text, 60)}" (R.6.2)` });
+        if (!c.checked && !ACEITO_RE.test(c.raw)) E.push({ f: relMain, m: tr(LANG, `archive com critério aberto sem [aceito-incompleto: ...]: "${truncate(c.text, 60)}" (R.6.2)`, `archive with an open criterion without [accepted-incomplete: ...]: "${truncate(c.text, 60)}" (R.6.2)`) });
+        if (c.checked && !((hasTs(c.raw) && hasCommitEv(c.raw)) || hasVerifyTag(c.raw) || hasEvidenceTag(c.raw))) E.push({ f: relMain, m: tr(LANG, `archive com critério [x] sem evidência: "${truncate(c.text, 60)}" (R.6.2)`, `archive with a criterion [x] without evidence: "${truncate(c.text, 60)}" (R.6.2)`) });
       }
       for (const ft of splitList(pm.fields.Features || '')) {
         const r = featureConcludedOk(root, ft, id);
-        if (!r.ok) E.push({ f: relMain, m: r.why + ' — R.7 valida por CONTEÚDO no diff do PR' });
+        if (!r.ok) E.push({ f: relMain, m: r.why + tr(LANG, ' — R.7 valida por CONTEÚDO no diff do PR', ' — R.7 validates by CONTENT in the PR diff') });
       }
     } else if (loc.phase === 'discard') {
-      if (!hasSection(pm.raw, 'Justificativa de descarte')) E.push({ f: relMain, m: 'discard sem seção "## Justificativa de descarte" — bloqueado (R.5)' });
-      if (!exists(P(loc.dir, 'digest.md'))) E.push({ f: relMain, m: 'discard sem digest.md — bloqueado (lições preservadas, R.5)' });
+      if (!hasSection(pm.raw, 'Justificativa de descarte')) E.push({ f: relMain, m: tr(LANG, 'discard sem seção "## Justificativa de descarte" — bloqueado (R.5)', 'discard without a "## Discard rationale" section — blocked (R.5)') });
+      if (!exists(P(loc.dir, 'digest.md'))) E.push({ f: relMain, m: tr(LANG, 'discard sem digest.md — bloqueado (lições preservadas, R.5)', 'discard without digest.md — blocked (lessons preserved, R.5)') });
     } else if (loc.phase === 'future') {
-      if ((pm.fields['Pausada em'] || '—').trim() === '—') E.push({ f: relMain, m: 'SPEC voltou a future/ sem **Pausada em:** preenchido — pausa legítima registra motivo (R.5)' });
+      if ((pm.fields['Pausada em'] || '—').trim() === '—') E.push({ f: relMain, m: tr(LANG, 'SPEC voltou a future/ sem **Pausada em:** preenchido — pausa legítima registra motivo (R.5)', 'SPEC went back to future/ without **Paused at:** filled in — a legitimate pause records a reason (R.5)') });
     }
   }
   for (const p of added) {
@@ -1686,7 +1694,7 @@ function auditPr(root, base, E, W) {
     if (!m) continue;
     const sid = m[2];
     const journalTouched = [...touched].some((t) => t.endsWith('/journal.md') && t.includes(`/${sid}/`));
-    if (!journalTouched) W.push({ f: p, m: `artefato de pipeline sem contrapartida no journal da ${sid} (R.6.1) — registre [nota]/[decisão]/[descoberta] no LOG` });
+    if (!journalTouched) W.push({ f: p, m: tr(LANG, `artefato de pipeline sem contrapartida no journal da ${sid} (R.6.1) — registre [nota]/[decisão]/[descoberta] no LOG`, `pipeline artifact with no counterpart in the journal of ${sid} (R.6.1) — record a [note]/[decision]/[discovery] in the LOG`) });
   }
   // arquivo no commit base (ausência = condição esperada de PR, não erro): retorna null sem AVISO
   const showAtBase = (relPath) => { const r = gitRun(['show', `${base}:${relPath}`], root); return r.ok ? r.out : null; };
@@ -1701,7 +1709,7 @@ function auditPr(root, base, E, W) {
       const jTxt = norm(readSafe(P(s.dir, 'journal.md')));
       const logPart = jTxt.includes('## LOG') ? jTxt.slice(jTxt.indexOf('## LOG')) : jTxt;
       if (!/escalat|deescalat|porte|\bsize\b/i.test(logPart)) {
-        E.push({ f: relMain, m: `campo Porte mudou (${basePorte} → ${headPorte}) sem entrada de journal (escalate/deescalate) — use node scripts/specctl.mjs escalate|deescalate (D2), nunca edite **Porte:** à mão` });
+        E.push({ f: relMain, m: tr(LANG, `campo Porte mudou (${basePorte} → ${headPorte}) sem entrada de journal (escalate/deescalate) — use node scripts/specctl.mjs escalate|deescalate (D2), nunca edite **Porte:** à mão`, `Size field changed (${porteOut(canonPorte(basePorte))} → ${porteOut(canonPorte(headPorte))}) without a journal entry (escalate/deescalate) — use node scripts/specctl.mjs escalate|deescalate (D2), never edit **Size:** by hand`) });
       }
     }
   }
@@ -1720,7 +1728,7 @@ function auditPr(root, base, E, W) {
         const touchesCode = files.out.split('\n').some((p) => p && !p.startsWith('docs/') && !p.startsWith('.scratch/') && !p.startsWith('.claude/') && !p.startsWith('.github/') && p !== 'scripts/specctl.mjs' && p !== 'CLAUDE.md' && p !== 'AGENTS.md');
         if (touchesCode) missing.push(`${h} "${truncate(subj || '', 50)}"`);
       }
-      if (missing.length) W.push({ f: '(commits do PR)', m: `R.17: ${missing.length} commit(s) tocando código sob SPEC ativa SEM trailer 'Spec: SPEC-<id>': ${missing.slice(0, 3).join(' · ')}${missing.length > 3 ? ` (+${missing.length - 3})` : ''} — inclua o trailer nos próximos commits` });
+      if (missing.length) W.push({ f: tr(LANG, '(commits do PR)', '(PR commits)'), m: tr(LANG, `R.17: ${missing.length} commit(s) tocando código sob SPEC ativa SEM trailer 'Spec: SPEC-<id>': ${missing.slice(0, 3).join(' · ')}${missing.length > 3 ? ` (+${missing.length - 3})` : ''} — inclua o trailer nos próximos commits`, `R.17: ${missing.length} commit(s) touching code under an active SPEC WITHOUT the 'Spec: SPEC-<id>' trailer: ${missing.slice(0, 3).join(' · ')}${missing.length > 3 ? ` (+${missing.length - 3})` : ''} — add the trailer to the next commits`) });
     }
   }
 }
@@ -1739,7 +1747,7 @@ function auditBase(root, E, W) {
       const key = `${relOf(root, fp)}|${ref}`;
       if (seenGhost.has(key)) continue;
       seenGhost.add(key);
-      W.push({ f: relOf(root, fp), m: `referência a SPEC fantasma: ${ref} (não existe em nenhuma fase)` });
+      W.push({ f: relOf(root, fp), m: tr(LANG, `referência a SPEC fantasma: ${ref} (não existe em nenhuma fase)`, `reference to a ghost SPEC: ${ref} (does not exist in any phase)`) });
     }
   }
   // staleness por CONTEÚDO (nunca mtime)
@@ -1748,9 +1756,9 @@ function auditBase(root, E, W) {
     const jp = P(s.dir, 'journal.md');
     if (!exists(jp)) continue;
     const m = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})/.exec(fieldValue(readSafe(jp), 'Última atualização'));
-    if (!m) { W.push({ f: `docs/active/${s.id}/journal.md`, m: 'SNAPSHOT sem **Última atualização:** — staleness indeterminável' }); continue; }
+    if (!m) { W.push({ f: `docs/active/${s.id}/journal.md`, m: tr(LANG, 'SNAPSHOT sem **Última atualização:** — staleness indeterminável', 'SNAPSHOT without **Last updated:** — staleness cannot be determined') }); continue; }
     const t = parseTs(m[1]);
-    if (t && Date.now() - t.getTime() > 30 * DAY) W.push({ f: `docs/active/${s.id}/journal.md`, m: `SPEC ativa parada há >30 dias (Última atualização: ${m[1]}) — pause com motivo ou retome` });
+    if (t && Date.now() - t.getTime() > 30 * DAY) W.push({ f: `docs/active/${s.id}/journal.md`, m: tr(LANG, `SPEC ativa parada há >30 dias (Última atualização: ${m[1]}) — pause com motivo ou retome`, `active SPEC idle for >30 days (Last updated: ${m[1]}) — pause with a reason or resume`) });
   }
   // anti-fuga + integridade de evidência (D1/A4) — SEMPRE warn (stage1), nunca strict-fail
   for (const s of specs.filter((x) => x.phase === 'active')) {
@@ -1759,14 +1767,14 @@ function auditBase(root, E, W) {
     const porte = (pm.fields.Porte || 'M').toUpperCase();
     // (a) porte P com >3 critérios: sinais de porte M
     if (porte === 'P' && crit.length > 3) {
-      W.push({ f: `docs/active/${s.id}/main.md`, m: `porte P com ${crit.length} critérios — sinais de porte M; considere: node scripts/specctl.mjs escalate ${s.id} M`, stage1: true });
+      W.push({ f: `docs/active/${s.id}/main.md`, m: tr(LANG, `porte P com ${crit.length} critérios — sinais de porte M; considere: node scripts/specctl.mjs escalate ${s.id} M`, `size S with ${crit.length} criteria — signs of size M; consider: node scripts/specctl.mjs escalate ${s.id} M`), stage1: true });
     }
     // (b) critério com "verify: exit 0" sem entrada de LOG contendo "verify:" no journal: evidência sem rastro
     if (crit.some((c) => /verify:\s*exit 0/.test(c.raw))) {
       const jTxt = norm(readSafe(P(s.dir, 'journal.md')));
       const logPart = jTxt.includes('## LOG') ? jTxt.slice(jTxt.indexOf('## LOG')) : jTxt;
       if (!/verify:/.test(logPart)) {
-        W.push({ f: `docs/active/${s.id}/main.md`, m: `critério com "verify: exit 0" sem entrada de LOG contendo "verify:" no journal — evidência sem rastro (R.6.1); re-verifique com node scripts/specctl.mjs verify ${s.id} --all`, stage1: true });
+        W.push({ f: `docs/active/${s.id}/main.md`, m: tr(LANG, `critério com "verify: exit 0" sem entrada de LOG contendo "verify:" no journal — evidência sem rastro (R.6.1); re-verifique com node scripts/specctl.mjs verify ${s.id} --all`, `criterion with "verify: exit 0" but no journal LOG entry containing "verify:" — untraceable evidence (R.6.1); re-verify with node scripts/specctl.mjs verify ${s.id} --all`), stage1: true });
       }
     }
   }
@@ -1778,11 +1786,11 @@ function auditBase(root, E, W) {
       const cid = path.basename(fp, '.md');
       if (activeIds.has(cid)) continue;
       const elsewhere = specs.find((s) => s.id === cid);
-      if (elsewhere) W.push({ f: relOf(root, fp), m: `claim órfão: ${cid} está em ${elsewhere.phase}/ — remova o claim (transições via specctl fazem isso)` });
+      if (elsewhere) W.push({ f: relOf(root, fp), m: tr(LANG, `claim órfão: ${cid} está em ${elsewhere.phase}/ — remova o claim (transições via specctl fazem isso)`, `orphan claim: ${cid} is in ${elsewhere.phase}/ — remove the claim (specctl transitions do this)`) });
       // sem SPEC local: pode estar ativa em outra branch — é o design, não avisa
     }
     for (const id of activeIds) {
-      if (!exists(claimPath(root, id))) W.push({ f: `docs/active/${id}`, m: 'ativação sem claim (R.11) — recrie: docs/claims/' + id + '.md (specctl activate faz isso)' });
+      if (!exists(claimPath(root, id))) W.push({ f: `docs/active/${id}`, m: tr(LANG, 'ativação sem claim (R.11) — recrie: docs/claims/' + id + '.md (specctl activate faz isso)', 'activation without a claim (R.11) — recreate: docs/claims/' + id + '.md (specctl activate does this)') });
     }
     // team: multi — claim existe local mas NÃO na base = invisível aos outros devs (a publicação atrasou)
     if (manifest(root).team === 'multi') {
@@ -1796,7 +1804,7 @@ function auditBase(root, E, W) {
         const inBase = gitRun(['cat-file', '-e', `${base}:${rel.split(path.sep).join('/')}`], root);
         const inRemoteBase = inBase.ok ? inBase : gitRun(['cat-file', '-e', `origin/${base}:${rel.split(path.sep).join('/')}`], root);
         if (!inBase.ok && !inRemoteBase.ok) {
-          W.push({ f: rel, m: `team=multi: claim de ${id} ainda NÃO publicado em '${base}' — os outros devs não veem o trabalho em voo (R.11). PR trivial: só docs/claims/ (specctl activate imprime os comandos)` });
+          W.push({ f: rel, m: tr(LANG, `team=multi: claim de ${id} ainda NÃO publicado em '${base}' — os outros devs não veem o trabalho em voo (R.11). PR trivial: só docs/claims/ (specctl activate imprime os comandos)`, `team=multi: claim for ${id} NOT yet published to '${base}' — other devs cannot see the in-flight work (R.11). Trivial PR: only docs/claims/ (specctl activate prints the commands)`) });
         }
       }
     }
@@ -1807,7 +1815,7 @@ function auditBase(root, E, W) {
       const m = /(DEC-(\d{4})(\d{2})(\d{2})-\d{4}[\w-]*)/.exec(line);
       if (!m || /obsolet|substitu|supersed/i.test(line)) continue;
       const t = new Date(+m[2], +m[3] - 1, +m[4]);
-      if (Date.now() - t.getTime() > 180 * DAY) W.push({ f: relOf(root, f.path), m: `decisão ativa há >180 dias: ${m[1]} — revalide ou marque obsoleta` });
+      if (Date.now() - t.getTime() > 180 * DAY) W.push({ f: relOf(root, f.path), m: tr(LANG, `decisão ativa há >180 dias: ${m[1]} — revalide ou marque obsoleta`, `decision active for >180 days: ${m[1]} — revalidate or mark it obsolete`) });
     }
   }
 }
@@ -1818,20 +1826,28 @@ function cmdAudit(flags) {
   if (flags.deps) auditDeps(root, E, W);
   if (flags['main-gate']) {
     const act = activeSpecs(root);
-    if (act.length) E.push({ f: 'docs/active/', m: `R.2 (gate de main): docs/active/ deve estar vazio — encontrado: ${act.map((s) => s.id).join(', ')}` });
+    if (act.length) E.push({ f: 'docs/active/', m: tr(LANG, `R.2 (gate de main): docs/active/ deve estar vazio — encontrado: ${act.map((s) => s.id).join(', ')}`, `R.2 (main gate): docs/active/ must be empty — found: ${act.map((s) => s.id).join(', ')}`) });
   }
   if (flags.pr) auditPr(root, flags.base, E, W);
-  for (const e of E) process.stderr.write(`ERRO  ${e.f}: ${e.m}\n`);
+  for (const e of E) process.stderr.write(tr(LANG, `ERRO  ${e.f}: ${e.m}\n`, `ERROR   ${e.f}: ${e.m}\n`));
   if (W.length) {
-    process.stdout.write('AVISOS (não bloqueiam archive/close/CI):\n');
-    for (const w of W) process.stdout.write(`AVISO ${w.f}: ${w.m}\n`);
+    process.stdout.write(tr(LANG, 'AVISOS (não bloqueiam archive/close/CI):\n', 'WARNINGS (do not block archive/close/CI):\n'));
+    for (const w of W) process.stdout.write(tr(LANG, `AVISO ${w.f}: ${w.m}\n`, `WARNING ${w.f}: ${w.m}\n`));
   }
-  process.stdout.write(`\naudit: ${E.length} erro(s), ${W.length} aviso(s)\n`);
+  process.stdout.write(tr(LANG, `\naudit: ${E.length} erro(s), ${W.length} aviso(s)\n`, `\naudit: ${E.length} error(s), ${W.length} warning(s)\n`));
   process.exit(E.length ? 1 : 0);
 }
 
 // ---------------------------------------------------------------- brief / capsule / stamp
 
+const HARD_BANS_EN = [
+  '1. R.6.2 — binary contract: only the USER accepts an incomplete criterion (marker [accepted-incomplete: "literal quote" YYYY-MM-DD HH:MM]). NEVER reduce scope silently.',
+  '2. The journal LOG is append-only — NEVER edit/rewrite old entries; add a new dated entry.',
+  '3. docs/active/ empty on main — every active SPEC lives on a feature branch.',
+  '4. Artifacts/temp files go in the SPEC folder — tmp/ (disposable) or evidence/ (persistent); with no active SPEC: .scratch/.',
+  '5. FORBIDDEN to sweep scripts/specctl.mjs or re-read docs/rules/* just to "ensure compliance" — the gates say what is missing (close <id> --dry). Reading the rule FOR THE TASK at the moment of use (transition→lifecycle, artifact→formats) is the RIGHT path and does not violate this ban.',
+];
+const hardBans = () => (LANG === 'en' ? HARD_BANS_EN : HARD_BANS);
 const HARD_BANS = [
   '1. R.6.2 — contrato binário: só o USUÁRIO aceita critério incompleto (marcador [aceito-incompleto: "citação literal" YYYY-MM-DD HH:MM]). NUNCA reduza escopo em silêncio.',
   '2. LOG do journal é append-only — NUNCA edite/reescreva entradas antigas; adicione nova entrada datada.',
@@ -1851,9 +1867,9 @@ function briefNextLines(root, disc, activeNonEmpty) {
   const openPrograms = disc.programs.filter((p) => p.state.open);
   const roadmapCount = (disc.roadmap.next ? 1 : 0) + disc.roadmap.later.length;
   if (activeNonEmpty) {
-    return [`Backlog: ${openPrograms.length} programa(s) aberto(s), ${roadmapCount} no roadmap — \`specctl next\``];
+    return [tr(LANG, `Backlog: ${openPrograms.length} programa(s) aberto(s), ${roadmapCount} no roadmap — \`specctl next\``, `Backlog: ${openPrograms.length} open program(s), ${roadmapCount} in the roadmap — \`specctl next\``)];
   }
-  const L = ['Próximo trabalho:'];
+  const L = [tr(LANG, 'Próximo trabalho:', 'Next work:')];
   const hadContent = L.length;
   // Programas: 1 SPEC destacada por programa (▶ pronto, senão ⏳ ativo) + contagem de bloqueados
   if (openPrograms.length) {
@@ -1866,7 +1882,7 @@ function briefNextLines(root, disc, activeNonEmpty) {
       if (state.paused.length) seg += ` · ⏸${state.paused.length}`;
       return seg;
     });
-    L.push(`- Programas: ${parts.join(' | ')}`);
+    L.push(`- ${tr(LANG, 'Programas', 'Programs')}: ${parts.join(' | ')}`);
   }
   // Roadmap: topo + "(+N)"
   if (disc.roadmap.next) {
@@ -1875,52 +1891,52 @@ function briefNextLines(root, disc, activeNonEmpty) {
   }
   // Não-priorizadas: só a contagem
   if (disc.orphans.length) {
-    L.push(`- Não-priorizadas: ${disc.orphans.length} (rode \`specctl next\` ou priorize em docs/ROADMAP.md)`);
+    L.push(tr(LANG, `- Não-priorizadas: ${disc.orphans.length} (rode \`specctl next\` ou priorize em docs/ROADMAP.md)`, `- Unprioritized: ${disc.orphans.length} (run \`specctl next\` or prioritize in docs/ROADMAP.md)`));
   }
   return L.length > hadContent ? L : [];
 }
 function cmdBrief(flags) {
   const root = setLang(findRoot(process.cwd()));
-  if (!root) { out('[SDD v4] projeto sem docs/.spec-system.json — rode a skill spec-system-init.'); process.exit(0); }
+  if (!root) { out(tr(LANG, '[SDD v4] projeto sem docs/.spec-system.json — rode a skill spec-system-init.', '[SDD v4] project without docs/.spec-system.json — run the spec-system-init skill.')); process.exit(0); }
   const man = manifest(root);
   const branch = currentBranch(root);
   const act = activeSpecs(root);
   const snapOf = (s) => {
     const jp = P(s.dir, 'journal.md');
-    if (!exists(jp)) return '(journal.md ausente)';
+    if (!exists(jp)) return tr(LANG, '(journal.md ausente)', '(journal.md missing)');
     return norm(read(jp)).split('\n').slice(0, 60).join('\n');
   };
   // C4 — brief --agent <id>: bundle 1-call (compacto + main.md + SNAPSHOT + próximos passos, sem duplicar)
   if (flags.agent) {
     const spec = findSpec(root, String(flags.agent));
     const B = [];
-    B.push(`[bundle ${spec.id} — 1-call p/ subagente · branch ${branch || '(git indisponível)'} · NOW=${now()}]`);
+    B.push(tr(LANG, `[bundle ${spec.id} — 1-call p/ subagente · branch ${branch || '(git indisponível)'} · NOW=${now()}]`, `[bundle ${spec.id} — 1-call for subagent · branch ${branch || '(git unavailable)'} · NOW=${now()}]`));
     B.push('');
     B.push('HARD BANS (TIER-0):');
-    for (const b of HARD_BANS) B.push(b);
+    for (const b of hardBans()) B.push(b);
     B.push('');
     B.push('== main.md ==');
     B.push(norm(readSafe(P(spec.dir, 'main.md'))).replace(/\n+$/, ''));
     B.push('');
     B.push(`== SNAPSHOT (${spec.id}) ==`);
     B.push(snapOf(spec));
-    B.push('== fim do SNAPSHOT ==');
+    B.push(tr(LANG, '== fim do SNAPSHOT ==', '== end of SNAPSHOT =='));
     B.push('');
-    B.push('Próximos passos:');
+    B.push(tr(LANG, 'Próximos passos:', 'Next steps:'));
     try { B.push(checklistText(spec, closeStage(root, spec), true)); }
-    catch { B.push(`fechar: node scripts/specctl.mjs close ${spec.id} --dry`); }
+    catch { B.push(tr(LANG, `fechar: node scripts/specctl.mjs close ${spec.id} --dry`, `close: node scripts/specctl.mjs close ${spec.id} --dry`)); }
     out(B.join('\n'));
     process.exit(0);
   }
   const L = [];
   if (flags.compact) {
     L.push('HARD BANS (TIER-0):');
-    for (const b of HARD_BANS) L.push(b);
+    for (const b of hardBans()) L.push(b);
     L.push('');
-    L.push(`Branch: ${branch || '(git indisponível)'} · SPECs ativas: ${act.length ? act.map((s) => s.id).join(', ') : 'nenhuma'}`);
+    L.push(tr(LANG, `Branch: ${branch || '(git indisponível)'} · SPECs ativas: ${act.length ? act.map((s) => s.id).join(', ') : 'nenhuma'}`, `Branch: ${branch || '(git unavailable)'} · active SPECs: ${act.length ? act.map((s) => s.id).join(', ') : 'none'}`));
     if (act.length) { L.push(''); L.push(`== SNAPSHOT (${act[0].id}) ==`); L.push(snapOf(act[0])); }
     L.push('');
-    L.push('(pré-compact: faça o flush — sobrescreva o SNAPSHOT e registre no LOG o que não pode se perder)');
+    L.push(tr(LANG, '(pré-compact: faça o flush — sobrescreva o SNAPSHOT e registre no LOG o que não pode se perder)', '(pre-compact: flush now — overwrite the SNAPSHOT and record in the LOG what must not be lost)'));
     L.push('');
     L.push(`[SDD v4 · ${man.schema || SCHEMA} · NOW=${now()}]`);
     out(L.join('\n'));
@@ -1930,39 +1946,39 @@ function cmdBrief(flags) {
   const activeIds = new Set(act.map((s) => s.id));
   const myFeats = new Set(act.flatMap((s) => specSummary(root, s).feats));
   L.push('HARD BANS (TIER-0):');
-  for (const b of HARD_BANS) L.push(b);
+  for (const b of hardBans()) L.push(b);
   L.push('');
-  L.push('Referências: criar/editar artefato → docs/rules/formats.md · transição de ciclo → docs/rules/lifecycle.md · programa/DAG → docs/rules/programs.md · interop/workspace → docs/rules/interop.md');
+  L.push(tr(LANG, 'Referências: criar/editar artefato → docs/rules/formats.md · transição de ciclo → docs/rules/lifecycle.md · programa/DAG → docs/rules/programs.md · interop/workspace → docs/rules/interop.md', 'References: create/edit artifact → docs/rules/formats.md · lifecycle transition → docs/rules/lifecycle.md · program/DAG → docs/rules/programs.md · interop/workspace → docs/rules/interop.md'));
   // INDEX filtrado pelas Features da SPEC ativa (+ "outras: ver docs/INDEX.md")
   const idxAll = norm(readSafe(P(root, 'docs', 'INDEX.md'))).split('\n').filter((l) => l.startsWith('- '));
   L.push('');
   if (!idxAll.length) {
-    L.push('INDEX (resumo):');
-    L.push('(vazio — rode: node scripts/specctl.mjs index)');
+    L.push(tr(LANG, 'INDEX (resumo):', 'INDEX (summary):'));
+    L.push(tr(LANG, '(vazio — rode: node scripts/specctl.mjs index)', '(empty — run: node scripts/specctl.mjs index)'));
   } else if (myFeats.size) {
     const mine = idxAll.filter((l) => { const m = /^-\s+\*\*([^*]+)\*\*/.exec(l); return m && myFeats.has(m[1].trim()); });
-    L.push('INDEX (features desta SPEC):');
-    L.push(...(mine.length ? mine : ['(nenhuma feature da SPEC no INDEX ainda)']));
-    L.push('outras: ver docs/INDEX.md');
+    L.push(tr(LANG, 'INDEX (features desta SPEC):', 'INDEX (features of this SPEC):'));
+    L.push(...(mine.length ? mine : [tr(LANG, '(nenhuma feature da SPEC no INDEX ainda)', '(no feature of the SPEC in the INDEX yet)')]));
+    L.push(tr(LANG, 'outras: ver docs/INDEX.md', 'others: see docs/INDEX.md'));
   } else {
-    L.push('INDEX (resumo):');
+    L.push(tr(LANG, 'INDEX (resumo):', 'INDEX (summary):'));
     L.push(...idxAll.slice(0, 10));
-    L.push('outras: ver docs/INDEX.md');
+    L.push(tr(LANG, 'outras: ver docs/INDEX.md', 'others: see docs/INDEX.md'));
   }
   // ---- blocos VOLÁTEIS no fim: branch, SPECs ativas, SNAPSHOT, claims, próximo trabalho
   L.push('');
-  L.push(`Branch: ${branch || '(git indisponível)'}`);
-  if (!act.length) L.push('SPECs ativas: nenhuma (docs/active/ vazio)');
+  L.push(`Branch: ${branch || tr(LANG, '(git indisponível)', '(git unavailable)')}`);
+  if (!act.length) L.push(tr(LANG, 'SPECs ativas: nenhuma (docs/active/ vazio)', 'Active SPECs: none (docs/active/ empty)'));
   else {
     for (const s of act) {
       const info = specSummary(root, s);
-      L.push(`SPEC ativa: ${s.id} (${info.feats.join(', ') || 'sem features'}) — critérios ${info.done}/${info.total} [x]`);
+      L.push(tr(LANG, `SPEC ativa: ${s.id} (${info.feats.join(', ') || 'sem features'}) — critérios ${info.done}/${info.total} [x]`, `Active SPEC: ${s.id} (${info.feats.join(', ') || 'no features'}) — criteria ${info.done}/${info.total} [x]`));
     }
-    if (act.length > 1) L.push('ATENÇÃO: múltiplas SPECs em docs/active/ — indique QUAL no prompt (R.9 exige escolha).');
+    if (act.length > 1) L.push(tr(LANG, 'ATENÇÃO: múltiplas SPECs em docs/active/ — indique QUAL no prompt (R.9 exige escolha).', 'WARNING: multiple SPECs in docs/active/ — say WHICH one in the prompt (R.9 requires a choice).'));
     L.push('');
     L.push(`== SNAPSHOT (${act[0].id}) ==`);
     L.push(snapOf(act[0]));
-    L.push('== fim do SNAPSHOT ==');
+    L.push(tr(LANG, '== fim do SNAPSHOT ==', '== end of SNAPSHOT =='));
   }
   // claims em colisão
   const collisions = [];
@@ -1978,19 +1994,19 @@ function cmdBrief(flags) {
     }
   }
   L.push('');
-  L.push(collisions.length ? 'Claims em COLISÃO (mesma feature em voo em outra branch):' : 'Claims em colisão: nenhuma');
+  L.push(collisions.length ? tr(LANG, 'Claims em COLISÃO (mesma feature em voo em outra branch):', 'COLLIDING claims (same feature in flight on another branch):') : tr(LANG, 'Claims em colisão: nenhuma', 'Colliding claims: none'));
   for (const c of collisions) L.push(c);
   // itens deferidos com autorização (R.6.2) — visibilidade sem abrir archive
   const defTxt = readSafe(P(root, 'docs', 'DEFERRED.md'));
   const defCount = defTxt ? (defTxt.match(/^- SPEC-/gm) || []).length : 0;
-  if (defCount) L.push(`Deferidos (R.6.2, com citação): ${defCount} item(ns) — ver docs/DEFERRED.md`);
+  if (defCount) L.push(tr(LANG, `Deferidos (R.6.2, com citação): ${defCount} item(ns) — ver docs/DEFERRED.md`, `Deferred (R.6.2, with quote): ${defCount} item(s) — see docs/DEFERRED.md`));
   // Próximo trabalho (formato compacto) — só quando há future/ ou programa aberto
   const disc = discoveryModel(root);
   if (disc.hasFuture || disc.anyOpenProgram) {
     const nextLines = briefNextLines(root, disc, act.length > 0);
     if (nextLines.length) { L.push(''); L.push(...nextLines); }
   }
-  L.push('R.9: classifique a 1ª linha da sua resposta: [continuidade: SPEC-x] | [nova] | [livre]');
+  L.push(tr(LANG, 'R.9: classifique a 1ª linha da sua resposta: [continuidade: SPEC-x] | [nova] | [livre]', 'R.9: classify the 1st line of your answer: [continuation: SPEC-x] | [new] | [free]'));
   // NOW no FIM (bloco volátil por último)
   L.push('');
   L.push(`[SDD v4 · ${man.schema || SCHEMA} · NOW=${now()} · Branch: ${branch || '—'}]`);
@@ -2038,46 +2054,47 @@ function cmdNext(root, flags) {
   if (flags.program) {
     const slug = String(flags.program).trim();
     if (!programs.some((p) => p.prog.slug === slug)) {
-      die(`programa '${slug}' não existe em docs/programs/ — programas: ${programs.map((p) => p.prog.slug).join(', ') || '(nenhum)'}`);
+      die(tr(LANG, `programa '${slug}' não existe em docs/programs/ — programas: ${programs.map((p) => p.prog.slug).join(', ') || '(nenhum)'}`, `program '${slug}' does not exist in docs/programs/ — programs: ${programs.map((p) => p.prog.slug).join(', ') || '(none)'}`));
     }
     programs = programs.filter((p) => p.prog.slug === slug);
   }
   const L = [];
-  L.push('=== Próximo trabalho ===');
+  const T = (pt, en) => tr(LANG, pt, en);
+  L.push(T('=== Próximo trabalho ===', '=== Next work ==='));
   // seção PROGRAMAS (ordem = dependências)
   const progLines = [];
   for (const { prog, state } of programs) {
-    for (const id of state.ready) progLines.push(`  ▶ pronto:   ${id} (programa ${prog.slug})`);
+    for (const id of state.ready) progLines.push(T(`  ▶ pronto:   ${id} (programa ${prog.slug})`, `  ▶ ready:    ${id} (program ${prog.slug})`));
     for (const id of state.active) {
       const owner = claimOwner(root, id);
-      progLines.push(`  ⏳ ativo:    ${id} (programa ${prog.slug})${owner ? ` [${owner}]` : ''}`);
+      progLines.push(T(`  ⏳ ativo:    ${id} (programa ${prog.slug})`, `  ⏳ active:   ${id} (program ${prog.slug})`) + (owner ? ` [${owner}]` : ''));
     }
-    for (const b of state.blocked) progLines.push(`  🔒 bloqueado: ${b.id} (programa ${prog.slug} — aguarda ${b.waits.join(', ')})`);
-    for (const id of state.paused) progLines.push(`  ⏸ pausado:  ${id} (programa ${prog.slug} — retomar: specctl resume ${id})`);
+    for (const b of state.blocked) progLines.push(T(`  🔒 bloqueado: ${b.id} (programa ${prog.slug} — aguarda ${b.waits.join(', ')})`, `  🔒 blocked:  ${b.id} (program ${prog.slug} — waits on ${b.waits.join(', ')})`));
+    for (const id of state.paused) progLines.push(T(`  ⏸ pausado:  ${id} (programa ${prog.slug} — retomar: specctl resume ${id})`, `  ⏸ paused:   ${id} (program ${prog.slug} — resume: specctl resume ${id})`));
   }
   if (progLines.length) {
     L.push('');
-    L.push('PROGRAMAS (ordem = dependências):');
+    L.push(T('PROGRAMAS (ordem = dependências):', 'PROGRAMS (order = dependencies):'));
     L.push(...progLines);
   }
   // seção ROADMAP (ordem = docs/ROADMAP.md) — só quando não filtrando por programa
   if (!flags.program && (model.roadmap.next || model.roadmap.later.length)) {
     L.push('');
-    L.push('ROADMAP (ordem = docs/ROADMAP.md):');
-    if (model.roadmap.next) L.push(`  ▶ próximo:  ${model.roadmap.next}`);
-    if (model.roadmap.later.length) L.push(`  · depois:   ${model.roadmap.later.join(', ')}`);
+    L.push(T('ROADMAP (ordem = docs/ROADMAP.md):', 'ROADMAP (order = docs/ROADMAP.md):'));
+    if (model.roadmap.next) L.push(T(`  ▶ próximo:  ${model.roadmap.next}`, `  ▶ next:     ${model.roadmap.next}`));
+    if (model.roadmap.later.length) L.push(T(`  · depois:   ${model.roadmap.later.join(', ')}`, `  · later:    ${model.roadmap.later.join(', ')}`));
   }
   // seção BACKLOG NÃO-PRIORIZADO (órfãs) — só quando não filtrando por programa
   if (!flags.program && model.orphans.length) {
     L.push('');
-    L.push('BACKLOG NÃO-PRIORIZADO (future sem programa e fora do ROADMAP — defina ordem em docs/ROADMAP.md):');
+    L.push(T('BACKLOG NÃO-PRIORIZADO (future sem programa e fora do ROADMAP — defina ordem em docs/ROADMAP.md):', 'UNPRIORITIZED BACKLOG (future without a program and not in the ROADMAP — set the order in docs/ROADMAP.md):'));
     L.push(`  ${model.orphans.join(', ')}`);
   }
   // tudo vazio
   const hasContent = progLines.length || (!flags.program && (model.roadmap.next || model.roadmap.later.length || model.orphans.length));
   if (!hasContent) {
-    if (flags.program) L.push('\nNada pendente neste programa: todos os nós estão concluídos ou pausados.');
-    else L.push('\nNada pendente: docs/future/ vazio e nenhum programa aberto.');
+    if (flags.program) L.push(T('\nNada pendente neste programa: todos os nós estão concluídos ou pausados.', '\nNothing pending in this program: all nodes are done or paused.'));
+    else L.push(T('\nNada pendente: docs/future/ vazio e nenhum programa aberto.', '\nNothing pending: docs/future/ is empty and no program is open.'));
   }
   out(L.join('\n'));
   process.exit(0);
@@ -2100,18 +2117,19 @@ function cmdCapsule() {
     const info = specSummary(root, act[0]);
     activePart = `${act[0].id}${info.feats.length ? ` (${info.feats.join(', ')})` : ''}`;
   } else if (act.length > 1) {
-    activePart = `${act.map((s) => s.id).join(', ')} — MÚLTIPLAS: escolha 1 no prompt`;
+    activePart = tr(LANG, `${act.map((s) => s.id).join(', ')} — MÚLTIPLAS: escolha 1 no prompt`, `${act.map((s) => s.id).join(', ')} — MULTIPLE: pick 1 in the prompt`);
   }
   // interop inline: a cápsula É o mecanismo da substituição de caminho (rules/interop.md) — skills prd
   // escrevem na pasta da SPEC, não em tasks/prd-*/; só injeta com SPEC ativa única (senão ambíguo)
   const inlineNote = man.interop === 'inline' && act.length === 1
-    ? ` · WORKSPACE: docs/active/${act[0].id}/ — substitua ./tasks/prd-<slug>/ por este caminho em TODOS os passos (leitura E escrita)`
+    ? tr(LANG, ` · WORKSPACE: docs/active/${act[0].id}/ — substitua ./tasks/prd-<slug>/ por este caminho em TODOS os passos (leitura E escrita)`, ` · WORKSPACE: docs/active/${act[0].id}/ — replace ./tasks/prd-<slug>/ with this path in ALL steps (read AND write)`)
     : '';
   const teamPart = man.team === 'multi' ? ' · team=multi' : '';
-  let cap = `NOW=${now()} · ACTIVE=${activePart} · workspace=${man.interop || 'none'}${teamPart}${inlineNote} · bans: R.6.2/append-only/main-limpa/tmp · classifique na 1ª linha: [continuidade|nova|livre]`;
+  const capTail = tr(LANG, ' · bans: R.6.2/append-only/main-limpa/tmp · classifique na 1ª linha: [continuidade|nova|livre]', ' · bans: R.6.2/append-only/clean-main/tmp · classify on the 1st line: [continuation|new|free]');
+  let cap = `NOW=${now()} · ACTIVE=${activePart} · workspace=${man.interop || 'none'}${teamPart}${inlineNote}${capTail}`;
   if (bytesOf(cap) > 800) {
     activePart = act.length ? act[0].id : '—';
-    cap = `NOW=${now()} · ACTIVE=${activePart} · workspace=${man.interop || 'none'}${teamPart}${inlineNote} · bans: R.6.2/append-only/main-limpa/tmp · classifique na 1ª linha: [continuidade|nova|livre]`;
+    cap = `NOW=${now()} · ACTIVE=${activePart} · workspace=${man.interop || 'none'}${teamPart}${inlineNote}${capTail}`;
   }
   out(cap);
   process.exit(0);
@@ -2131,14 +2149,14 @@ function cmdVerify(pos, flags) {
   const mainPath = P(spec.dir, 'main.md');
   const pm = parseMain(read(mainPath));
   const crit = getCriteria(pm);
-  if (!crit) die(`${spec.id}: sem seção "## Critério de aceite"`);
+  if (!crit) die(tr(LANG, `${spec.id}: sem seção "## Critério de aceite"`, `${spec.id}: no "## Acceptance criteria" section`));
   const targets = crit.filter((c) => {
     const v = verifyCmdOf(c.raw);
     if (!v || !v.runnable) return false;
     if (ACEITO_RE.test(c.raw)) return false; // R.6.2: aceito-incompleto pelo usuário NÃO roda (nem com --all) — senão o close abortava num critério já decidido
     return flags.all ? true : !c.checked;
   });
-  if (!targets.length) { out('nada a verificar — nenhum critério pendente com `verify:` executável (use --all para reverificar)'); process.exit(0); }
+  if (!targets.length) { out(tr(LANG, 'nada a verificar — nenhum critério pendente com `verify:` executável (use --all para reverificar)', 'nothing to verify — no pending criterion with a runnable `verify:` (use --all to re-verify)')); process.exit(0); }
   const short = git(['rev-parse', '--short', 'HEAD'], root); // exige git: evidência registra commit
   const lines = norm(read(mainPath)).split('\n');
   let fails = 0;
@@ -2154,11 +2172,11 @@ function cmdVerify(pos, flags) {
       line = line.replace(/\s*\(\d{4}-\d{2}-\d{2} \d{2}:\d{2}, commit `[^`]*`, verify: exit 0\)/, '');
       const vm = /^(\s*-\s*)\[(?: |x|X)\]\s*(.*?)(\s*\|\s*verify:.*)$/.exec(line);
       if (vm) lines[c.line] = `${vm[1]}[x] ${vm[2]} (${now()}, commit \`${short}\`, verify: exit 0)${vm[3]}`;
-      process.stdout.write('  PASS — marcado [x] com evidência\n');
+      process.stdout.write(tr(LANG, '  PASS — marcado [x] com evidência\n', '  PASS — marked [x] with evidence\n'));
       summary.push(`PASS: ${truncate(c.text, 60)}`);
     } else {
       fails++;
-      process.stdout.write(`  FAIL — critério permanece [ ]\n${detail ? '  ' + detail + '\n' : ''}`);
+      process.stdout.write(`${tr(LANG, '  FAIL — critério permanece [ ]', '  FAIL — criterion stays [ ]')}\n${detail ? '  ' + detail + '\n' : ''}`);
       summary.push(`FAIL: ${truncate(c.text, 60)}`);
     }
   }
@@ -2167,7 +2185,7 @@ function cmdVerify(pos, flags) {
   // n/n evidenciados → antecipa a descoberta do fechamento (A1)
   const afterCrit = getCriteria(parseMain(lines.join('\n'))) || [];
   if (!fails && afterCrit.length && afterCrit.every((c) => c.checked || ACEITO_RE.test(c.raw))) {
-    out(`próximo: node scripts/specctl.mjs close ${spec.id} --dry`);
+    out(tr(LANG, `próximo: node scripts/specctl.mjs close ${spec.id} --dry`, `next: node scripts/specctl.mjs close ${spec.id} --dry`));
   }
   process.exit(fails ? 1 : 0);
 }
@@ -2187,11 +2205,11 @@ function gitFooter(root) {
 function sanitizeBody(buf, label) {
   let s;
   try { s = new TextDecoder('utf-8', { fatal: true }).decode(buf); }
-  catch { die(`${label}: conteúdo não é UTF-8 válido — reenvie como UTF-8 (sem BOM)`); }
+  catch { die(tr(LANG, `${label}: conteúdo não é UTF-8 válido — reenvie como UTF-8 (sem BOM)`, `${label}: content is not valid UTF-8 — resend as UTF-8 (no BOM)`)); }
   return s.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').replace(/\s+$/, '');
 }
 
-const LOG_HELP = `uso: node scripts/specctl.mjs log <id> <tipo> "título" [--stdin|--body-file <f>]
+const LOG_HELP_PT = `uso: node scripts/specctl.mjs log <id> <tipo> "título" [--stdin|--body-file <f>]
 tipos: ${LOG_TYPES.join(' | ')}
 título: sempre 1 linha. Corpo (opcional, multilinha) por --stdin ou --body-file:
   bash:       node scripts/specctl.mjs log SPEC-x decisão "Título" --stdin <<'EOF'
@@ -2201,22 +2219,32 @@ título: sempre 1 linha. Corpo (opcional, multilinha) por --stdin ou --body-file
               corpo da entrada…
               '@ | node scripts/specctl.mjs log SPEC-x decisão "Título" --stdin
   arquivo:    node scripts/specctl.mjs log SPEC-x decisão "Título" --body-file nota.md`;
+const LOG_HELP_EN = `usage: node scripts/specctl.mjs log <id> <type> "title" [--stdin|--body-file <f>]
+types: ${LOG_TYPES.map((t) => LOG_TYPE_EN[t]).join(' | ')}
+title: always 1 line. Body (optional, multiline) via --stdin or --body-file:
+  bash:       node scripts/specctl.mjs log SPEC-x decision "Title" --stdin <<'EOF'
+              entry body…
+              EOF
+  PowerShell: @'
+              entry body…
+              '@ | node scripts/specctl.mjs log SPEC-x decision "Title" --stdin
+  file:       node scripts/specctl.mjs log SPEC-x decision "Title" --body-file note.md`;
 
 function cmdLog(pos, flags) {
   const root = requireRoot();
-  if (!pos[0] || !pos[1] || pos[2] === undefined) die(`log exige <id> <tipo> "título".\n${LOG_HELP}`);
+  if (!pos[0] || !pos[1] || pos[2] === undefined) die(tr(LANG, `log exige <id> <tipo> "título".\n${LOG_HELP_PT}`, `log requires <id> <type> "title".\n${LOG_HELP_EN}`));
   const spec = findSpec(root, pos[0]);
   const tipo = canonLogType(pos[1]); // PT, EN ou PT sem acento → canônico; gravado no idioma do journal
-  if (!tipo) die(`tipo inválido '${pos[1]}' — gramática completa dos tipos: ${LOG_TYPES.join(' | ')}\n${LOG_HELP}`);
+  if (!tipo) die(tr(LANG, `tipo inválido '${pos[1]}' — gramática completa dos tipos: ${LOG_TYPES.join(' | ')}\n${LOG_HELP_PT}`, `invalid type '${pos[1]}' — full type grammar: ${LOG_TYPES.map((t) => LOG_TYPE_EN[t]).join(' | ')}\n${LOG_HELP_EN}`));
   const titulo = String(pos[2]);
-  if (/[\r\n]/.test(titulo)) die(`título é single-line na gramática do LOG — detalhe multilinha vai no corpo (--stdin/--body-file).\n${LOG_HELP}`);
-  if (!titulo.trim()) die(`título vazio.\n${LOG_HELP}`);
-  if (flags.stdin && flags['body-file']) die('use --stdin OU --body-file, não ambos');
+  if (/[\r\n]/.test(titulo)) die(tr(LANG, `título é single-line na gramática do LOG — detalhe multilinha vai no corpo (--stdin/--body-file).\n${LOG_HELP_PT}`, `the title is single-line in the LOG grammar — multiline detail goes in the body (--stdin/--body-file).\n${LOG_HELP_EN}`));
+  if (!titulo.trim()) die(tr(LANG, `título vazio.\n${LOG_HELP_PT}`, `empty title.\n${LOG_HELP_EN}`));
+  if (flags.stdin && flags['body-file']) die(tr(LANG, 'use --stdin OU --body-file, não ambos', 'use --stdin OR --body-file, not both'));
   let body = '';
   if (flags.stdin) body = sanitizeBody(fs.readFileSync(0), 'stdin');
   else if (flags['body-file']) {
     const bf = path.resolve(String(flags['body-file']));
-    if (!exists(bf)) die(`--body-file: arquivo não existe: ${flags['body-file']}`);
+    if (!exists(bf)) die(tr(LANG, `--body-file: arquivo não existe: ${flags['body-file']}`, `--body-file: file does not exist: ${flags['body-file']}`));
     body = sanitizeBody(fs.readFileSync(bf), String(flags['body-file']));
   }
   const stored = [body, gitFooter(root)].filter(Boolean).join('\n');
@@ -2230,36 +2258,36 @@ function cmdLog(pos, flags) {
 function cmdCheck(pos, flags) {
   const root = requireRoot();
   const spec = findSpec(root, pos[0]);
-  if (spec.phase !== 'active') die(`check: ${spec.id} está em ${spec.phase}/ — evidência de critério só em SPEC ativa`);
+  if (spec.phase !== 'active') die(tr(LANG, `check: ${spec.id} está em ${spec.phase}/ — evidência de critério só em SPEC ativa`, `check: ${spec.id} is in ${spec.phase}/ — criterion evidence only in an active SPEC`));
   const n = parseInt(pos[1], 10);
   const mainPath = P(spec.dir, 'main.md');
   const pm = parseMain(read(mainPath));
   const crit = getCriteria(pm);
-  if (!crit || !crit.length) die(`${spec.id}: seção "## Critério de aceite" sem checkboxes — nada a estampar`);
+  if (!crit || !crit.length) die(tr(LANG, `${spec.id}: seção "## Critério de aceite" sem checkboxes — nada a estampar`, `${spec.id}: "## Acceptance criteria" section has no checkboxes — nothing to stamp`));
   if (!Number.isInteger(n) || n < 1 || n > crit.length) {
-    die(`uso: node scripts/specctl.mjs check <id> <n> [--evidence "..."] — n é 1-based; ${spec.id} tem ${crit.length} critério(s)`);
+    die(tr(LANG, `uso: node scripts/specctl.mjs check <id> <n> [--evidence "..."] — n é 1-based; ${spec.id} tem ${crit.length} critério(s)`, `usage: node scripts/specctl.mjs check <id> <n> [--evidence "..."] — n is 1-based; ${spec.id} has ${crit.length} criterion/criteria`));
   }
   const c = crit[n - 1];
-  if (hasVerifyTag(c.raw)) die(`critério ${n} tem verify: — rota: node scripts/specctl.mjs verify ${spec.id}`);
+  if (hasVerifyTag(c.raw)) die(tr(LANG, `critério ${n} tem verify: — rota: node scripts/specctl.mjs verify ${spec.id}`, `criterion ${n} has verify: — route: node scripts/specctl.mjs verify ${spec.id}`));
   const ev = flags.evidence ? String(flags.evidence).trim() : '';
-  if (/[\r\n]/.test(ev)) die('--evidence é single-line — detalhe longo vai no LOG (specctl log) ou em evidence/');
-  if (/verify:/.test(ev)) die('check NUNCA escreve o token "verify:" — evidência executável usa: node scripts/specctl.mjs verify');
+  if (/[\r\n]/.test(ev)) die(tr(LANG, '--evidence é single-line — detalhe longo vai no LOG (specctl log) ou em evidence/', '--evidence is single-line — long detail goes in the LOG (specctl log) or in evidence/'));
+  if (/verify:/.test(ev)) die(tr(LANG, 'check NUNCA escreve o token "verify:" — evidência executável usa: node scripts/specctl.mjs verify', 'check NEVER writes the "verify:" token — runnable evidence uses: node scripts/specctl.mjs verify'));
   const lines = norm(read(mainPath)).split('\n');
   const allClosedMsg = () => {
     const after = getCriteria(parseMain(lines.join('\n'))) || [];
     if (after.length && after.every((x) => x.checked || ACEITO_RE.test(x.raw))) {
-      out(`todos evidenciados — próximo: node scripts/specctl.mjs close ${spec.id} --dry`);
+      out(tr(LANG, `todos evidenciados — próximo: node scripts/specctl.mjs close ${spec.id} --dry`, `all evidenced — next: node scripts/specctl.mjs close ${spec.id} --dry`));
     }
   };
   if (c.checked) {
     out(lines[c.line].trim());
-    out(`critério ${n} já está [x] — nada a fazer`);
+    out(tr(LANG, `critério ${n} já está [x] — nada a fazer`, `criterion ${n} is already [x] — nothing to do`));
     allClosedMsg();
     process.exit(0);
   }
   const short = git(['rev-parse', '--short', 'HEAD'], root); // evidência registra commit (R.6)
   const m = /^(\s*-\s*)\[ \]\s*(.*?)\s*$/.exec(lines[c.line]);
-  if (!m) die(`critério ${n}: linha fora do formato "- [ ] ..." — corrija o main.md antes de estampar`);
+  if (!m) die(tr(LANG, `critério ${n}: linha fora do formato "- [ ] ..." — corrija o main.md antes de estampar`, `criterion ${n}: line does not match "- [ ] ..." — fix main.md before stamping`));
   lines[c.line] = `${m[1]}[x] ${m[2]} (${now()}, commit \`${short}\`${ev ? `, evidence: ${ev}` : ''})`;
   writeFile(mainPath, lines.join('\n'));
   out(lines[c.line].trim());
@@ -2331,31 +2359,31 @@ function cmdDigest(pos, flags) {
   const dgPath = P(spec.dir, 'digest.md');
   const rel = relOf(root, dgPath);
   if (flags.stdin || flags.file) { // refino do modelo: re-validado com resposta acionável
-    if (flags.stdin && flags.file) die('use --stdin OU --file, não ambos');
+    if (flags.stdin && flags.file) die(tr(LANG, 'use --stdin OU --file, não ambos', 'use --stdin OR --file, not both'));
     let raw;
     if (flags.stdin) raw = fs.readFileSync(0);
     else {
       const fsrc = path.resolve(String(flags.file));
-      if (!exists(fsrc)) die(`--file: arquivo não existe: ${flags.file}`);
+      if (!exists(fsrc)) die(tr(LANG, `--file: arquivo não existe: ${flags.file}`, `--file: file does not exist: ${flags.file}`));
       raw = fs.readFileSync(fsrc);
     }
     let txt = sanitizeBody(raw, flags.stdin ? 'stdin' : String(flags.file));
     if (!txt.endsWith('\n')) txt += '\n';
     const b = digestMeasure(txt);
-    if (b > 2000) die(`digest recusado: ${b}B > 2000B: corte ~${b - 2000}B e reenvie (medição LF, comentários HTML descontados)`);
+    if (b > 2000) die(tr(LANG, `digest recusado: ${b}B > 2000B: corte ~${b - 2000}B e reenvie (medição LF, comentários HTML descontados)`, `digest rejected: ${b}B > 2000B: cut ~${b - 2000}B and resend (LF measurement, HTML comments excluded)`));
     writeFile(dgPath, txt);
-    out(`digest gravado: ${b}B (≤2000) — ${rel}`);
+    out(tr(LANG, `digest gravado: ${b}B (≤2000) — ${rel}`, `digest written: ${b}B (≤2000) — ${rel}`));
     return;
   }
   if (exists(dgPath) && !flags.fix) {
     const b = digestMeasure(read(dgPath));
-    if (b > 2000) die(`digest.md existe com ${b}B > 2000B — re-gere dentro do cap: node scripts/specctl.mjs digest ${spec.id} --fix`);
-    die(`digest.md já existe (${b}B, dentro do cap) — refine via --stdin/--file ou re-gere: node scripts/specctl.mjs digest ${spec.id} --fix`);
+    if (b > 2000) die(tr(LANG, `digest.md existe com ${b}B > 2000B — re-gere dentro do cap: node scripts/specctl.mjs digest ${spec.id} --fix`, `digest.md exists with ${b}B > 2000B — regenerate within the cap: node scripts/specctl.mjs digest ${spec.id} --fix`));
+    die(tr(LANG, `digest.md já existe (${b}B, dentro do cap) — refine via --stdin/--file ou re-gere: node scripts/specctl.mjs digest ${spec.id} --fix`, `digest.md already exists (${b}B, within the cap) — refine via --stdin/--file or regenerate: node scripts/specctl.mjs digest ${spec.id} --fix`));
   }
   const txt = genDigest(root, spec);
   writeFile(dgPath, txt);
   out(txt.replace(/\n$/, ''));
-  out(`\ndigest: ${digestMeasure(txt)}B (≤2000) — gravado em ${rel}`);
+  out(tr(LANG, `\ndigest: ${digestMeasure(txt)}B (≤2000) — gravado em ${rel}`, `\ndigest: ${digestMeasure(txt)}B (≤2000) — written to ${rel}`));
 }
 
 // ---- rollup: ferramenta MANUAL/opcional (não é enforcement) — move blocos INTEIROS antigos p/ .history.md até a feature caber no alvo, para enxugar o auto-load N1 quando o AUTOR quiser. Tamanho de feature não é lintado nem bloqueado.
@@ -2386,7 +2414,7 @@ function rollupBlocks(lines) {
 }
 function rollupArea(root, area) {
   const fp = featurePathOf(root, area);
-  if (!exists(fp)) die(`docs/features/${area}.md não existe — áreas em docs/INDEX.md`);
+  if (!exists(fp)) die(tr(LANG, `docs/features/${area}.md não existe — áreas em docs/INDEX.md`, `docs/features/${area}.md does not exist — areas in docs/INDEX.md`));
   const lines = norm(read(fp)).split('\n');
   const rebuild = (removed) => lines.filter((_, i) => !removed.has(i)).join('\n').replace(/\n{3,}/g, '\n\n');
   let content = rebuild(new Set());
@@ -2416,12 +2444,12 @@ function rollupArea(root, area) {
 function cmdRollup(pos) {
   const root = requireRoot();
   const area = pos[0];
-  if (!area) die('uso: node scripts/specctl.mjs rollup <area> — move blocos antigos p/ docs/features/<area>.history.md até ≤8.000B');
+  if (!area) die(tr(LANG, 'uso: node scripts/specctl.mjs rollup <area> — move blocos antigos p/ docs/features/<area>.history.md até ≤8.000B', 'usage: node scripts/specctl.mjs rollup <area> — moves old blocks to docs/features/<area>.history.md until ≤8,000B'));
   const r = rollupArea(root, area);
-  out(`rollup: ${r.moved} bloco(s) → docs/features/${area}.history.md${r.moved ? '' : ' (nada movido)'}`);
+  out(tr(LANG, `rollup: ${r.moved} bloco(s) → docs/features/${area}.history.md${r.moved ? '' : ' (nada movido)'}`, `rollup: ${r.moved} block(s) → docs/features/${area}.history.md${r.moved ? '' : ' (nothing moved)'}`));
   out(r.fit
     ? `docs/features/${area}.md: ${r.bytes} bytes (≤${FEATURE_CAP})`
-    : `docs/features/${area}.md: ${r.bytes} bytes — mínimo atingível sem tocar seções vivas (> ${FEATURE_CAP}); reduza "Estado atual"/"Decisões arquiteturais ativas" manualmente`);
+    : tr(LANG, `docs/features/${area}.md: ${r.bytes} bytes — mínimo atingível sem tocar seções vivas (> ${FEATURE_CAP}); reduza "Estado atual"/"Decisões arquiteturais ativas" manualmente`, `docs/features/${area}.md: ${r.bytes} bytes — minimum reachable without touching live sections (> ${FEATURE_CAP}); shrink "Current state"/"Active architectural decisions" by hand`));
 }
 
 // ---- Porte com dente (D2): escalate one-way; rebaixar exige citação literal do usuário
@@ -2429,35 +2457,35 @@ const PORTE_RANK = { P: 1, M: 2, G: 3 };
 function cmdEscalate(pos) {
   const root = requireRoot();
   const spec = findSpec(root, pos[0]);
-  if (spec.phase === 'archive' || spec.phase === 'discard') die(`escalate: ${spec.id} está em ${spec.phase}/ — Porte só muda em SPEC aberta`);
+  if (spec.phase === 'archive' || spec.phase === 'discard') die(tr(LANG, `escalate: ${spec.id} está em ${spec.phase}/ — Porte só muda em SPEC aberta`, `escalate: ${spec.id} is in ${spec.phase}/ — Size only changes in an open SPEC`));
   const alvo = canonPorte(String(pos[1] || '').toUpperCase()); // aceita M|G e M|L
-  if (!['M', 'G'].includes(alvo)) die('uso: node scripts/specctl.mjs escalate <id> <M|G> (one-way: P→M→G)');
+  if (!['M', 'G'].includes(alvo)) die(tr(LANG, 'uso: node scripts/specctl.mjs escalate <id> <M|G> (one-way: P→M→G)', 'usage: node scripts/specctl.mjs escalate <id> <M|L> (one-way: S→M→L)'));
   const mainPath = P(spec.dir, 'main.md');
   const cur = (parseMain(read(mainPath)).fields.Porte || 'M').toUpperCase();
-  if (!PORTE_RANK[cur]) die(`Porte atual inválido no main.md: '${cur}' — corrija para P | M | G`);
+  if (!PORTE_RANK[cur]) die(tr(LANG, `Porte atual inválido no main.md: '${cur}' — corrija para P | M | G`, `invalid current Size in main.md: '${cur}' — fix it to S | M | L`));
   if (PORTE_RANK[alvo] <= PORTE_RANK[cur]) {
-    die(`escalate é ONE-WAY (P→M→G): ${cur} → ${alvo} não é escalação. Rebaixar é decisão do USUÁRIO: node scripts/specctl.mjs deescalate ${spec.id} <P|M> --cita "citação literal do usuário"`);
+    die(tr(LANG, `escalate é ONE-WAY (P→M→G): ${cur} → ${alvo} não é escalação. Rebaixar é decisão do USUÁRIO: node scripts/specctl.mjs deescalate ${spec.id} <P|M> --cita "citação literal do usuário"`, `escalate is ONE-WAY (S→M→L): ${porteOut(cur)} → ${porteOut(alvo)} is not an escalation. Deescalating is the USER's decision: node scripts/specctl.mjs deescalate ${spec.id} <S|M> --quote "user's literal quote"`));
   }
   writeFile(mainPath, setField(read(mainPath), 'Porte', alvo));
   appendLog(spec.dir, 'nota', (l) => tr(l, `Porte escalado ${cur} → ${alvo}`, `Size escalated ${porteOut(cur, 'en')} → ${porteOut(alvo, 'en')}`), gitFooter(root));
-  out(`Porte: ${cur} → ${alvo} (${spec.id}) — [nota] de escalação registrada no LOG`);
+  out(tr(LANG, `Porte: ${cur} → ${alvo} (${spec.id}) — [nota] de escalação registrada no LOG`, `Size: ${porteOut(cur)} → ${porteOut(alvo)} (${spec.id}) — escalation [note] recorded in the LOG`));
 }
 function cmdDeescalate(pos, flags) {
   const root = requireRoot();
   const spec = findSpec(root, pos[0]);
-  if (spec.phase === 'archive' || spec.phase === 'discard') die(`deescalate: ${spec.id} está em ${spec.phase}/ — Porte só muda em SPEC aberta`);
+  if (spec.phase === 'archive' || spec.phase === 'discard') die(tr(LANG, `deescalate: ${spec.id} está em ${spec.phase}/ — Porte só muda em SPEC aberta`, `deescalate: ${spec.id} is in ${spec.phase}/ — Size only changes in an open SPEC`));
   const alvo = canonPorte(String(pos[1] || '').toUpperCase()); // aceita P|M e S|M
-  if (!['P', 'M'].includes(alvo)) die('uso: node scripts/specctl.mjs deescalate <id> <P|M> --cita "citação literal do usuário"');
+  if (!['P', 'M'].includes(alvo)) die(tr(LANG, 'uso: node scripts/specctl.mjs deescalate <id> <P|M> --cita "citação literal do usuário"', 'usage: node scripts/specctl.mjs deescalate <id> <S|M> --quote "user\'s literal quote"'));
   const cita = flags.cita ? String(flags.cita).trim() : '';
-  if (!cita) die('deescalate exige --cita "citação literal do usuário" — rebaixar Porte é decisão do USUÁRIO (padrão aceito-incompleto), nunca do agente');
+  if (!cita) die(tr(LANG, 'deescalate exige --cita "citação literal do usuário" — rebaixar Porte é decisão do USUÁRIO (padrão aceito-incompleto), nunca do agente', 'deescalate requires --quote "user\'s literal quote" — deescalating Size is the USER\'s decision (accepted-incomplete pattern), never the agent\'s'));
   const mainPath = P(spec.dir, 'main.md');
   const cur = (parseMain(read(mainPath)).fields.Porte || 'M').toUpperCase();
-  if (PORTE_RANK[alvo] >= PORTE_RANK[cur]) die(`deescalate rebaixa o Porte: ${cur} → ${alvo} não é rebaixamento — para subir use: node scripts/specctl.mjs escalate ${spec.id} ${alvo}`);
+  if (PORTE_RANK[alvo] >= PORTE_RANK[cur]) die(tr(LANG, `deescalate rebaixa o Porte: ${cur} → ${alvo} não é rebaixamento — para subir use: node scripts/specctl.mjs escalate ${spec.id} ${alvo}`, `deescalate lowers the Size: ${porteOut(cur)} → ${porteOut(alvo)} is not a deescalation — to raise it use: node scripts/specctl.mjs escalate ${spec.id} ${porteOut(alvo)}`));
   writeFile(mainPath, setField(read(mainPath), 'Porte', alvo));
   const jLang = docLang(readSafe(P(spec.dir, 'journal.md')));
   const body = [`[${aceitoTag(jLang)}: "${cita.replace(/"/g, "'")}" ${now()}]`, gitFooter(root)].filter(Boolean).join('\n');
   appendLog(spec.dir, 'nota', (l) => tr(l, `Porte rebaixado ${cur} → ${alvo} (autorizado pelo usuário)`, `Size deescalated ${porteOut(cur, 'en')} → ${porteOut(alvo, 'en')} (authorized by the user)`), body);
-  out(`Porte: ${cur} → ${alvo} (${spec.id}) — citação do usuário registrada no LOG`);
+  out(tr(LANG, `Porte: ${cur} → ${alvo} (${spec.id}) — citação do usuário registrada no LOG`, `Size: ${porteOut(cur)} → ${porteOut(alvo)} (${spec.id}) — user quote recorded in the LOG`));
 }
 
 // ---- close (A1): stage → validate-ALL → apply (all-or-nothing, idempotente)
@@ -2467,70 +2495,72 @@ function closeStage(root, spec) {
   const crit = getCriteria(pm) || [];
   const blockers = [], autos = [];
   let verifyPending = 0;
-  if (!crit.length) blockers.push('seção "## Critério de aceite" sem checkboxes — contrato R.6.2 vazio');
+  const T = (pt, en) => tr(LANG, pt, en);
+  if (!crit.length) blockers.push(T('seção "## Critério de aceite" sem checkboxes — contrato R.6.2 vazio', 'section "## Acceptance criteria" has no checkboxes — R.6.2 contract is empty'));
   crit.forEach((c, i) => {
     const n = i + 1;
     if (hasVerifyTag(c.raw)) {
       const v = verifyCmdOf(c.raw);
       const runnable = !!(v && v.runnable);
       if (!c.checked && !ACEITO_RE.test(c.raw)) {
-        if (runnable) { verifyPending++; autos.push(`critério ${n} com verify: pendente — será executado no close`); }
-        else blockers.push(`critério ${n} com verify: placeholder — preencha o comando real (ou fluxo R.6.2): "${truncate(c.text, 50)}"`);
+        if (runnable) { verifyPending++; autos.push(T(`critério ${n} com verify: pendente — será executado no close`, `criterion ${n} with pending verify: — will run at close`)); }
+        else blockers.push(T(`critério ${n} com verify: placeholder — preencha o comando real (ou fluxo R.6.2): "${truncate(c.text, 50)}"`, `criterion ${n} with a placeholder verify: — fill in the real command (or the R.6.2 flow): "${truncate(c.text, 50)}"`));
       }
     } else if (!c.checked && !ACEITO_RE.test(c.raw)) {
-      blockers.push(`critério ${n} aberto sem evidência: "${truncate(c.text, 50)}" — rota: node scripts/specctl.mjs check ${spec.id} ${n} ou fluxo R.6.2 (item a item, só o USUÁRIO aceita incompleto)`);
+      blockers.push(T(`critério ${n} aberto sem evidência: "${truncate(c.text, 50)}" — rota: node scripts/specctl.mjs check ${spec.id} ${n} ou fluxo R.6.2 (item a item, só o USUÁRIO aceita incompleto)`, `criterion ${n} open without evidence: "${truncate(c.text, 50)}" — route: node scripts/specctl.mjs check ${spec.id} ${n} or the R.6.2 flow (item by item, only the USER accepts incomplete)`));
     } else if (c.checked && !hasTs(c.raw)) {
-      blockers.push(`critério ${n} [x] sem timestamp (R.6): "${truncate(c.text, 50)}" — evidencie via check/verify`);
+      blockers.push(T(`critério ${n} [x] sem timestamp (R.6): "${truncate(c.text, 50)}" — evidencie via check/verify`, `criterion ${n} [x] without timestamp (R.6): "${truncate(c.text, 50)}" — add evidence via check/verify`));
     }
   });
   const jp = P(spec.dir, 'journal.md');
   const jtxt = exists(jp) ? norm(readSafe(jp)) : '';
   if (!jtxt || !hasCurrentConclusao(jtxt)) {
-    blockers.push(`[conclusão] ausente no LOG (ou anterior à última reabertura) — rota: node scripts/specctl.mjs log ${spec.id} conclusão "o que foi entregue"`);
+    blockers.push(T(`[conclusão] ausente no LOG (ou anterior à última reabertura) — rota: node scripts/specctl.mjs log ${spec.id} conclusão "o que foi entregue"`, `[completion] missing from the LOG (or older than the last reopen) — route: node scripts/specctl.mjs log ${spec.id} completion "what was delivered"`));
   }
   // SNAPSHOT ainda em placeholder do template = não reflete a conclusão; o digest gerado herdaria o lixo ("Entregue: nada feito ainda")
   const snapEnd = jtxt.search(/^## LOG\b/m);
   if (SNAP_PLACEHOLDER.test(snapEnd >= 0 ? jtxt.slice(0, snapEnd) : jtxt)) {
-    blockers.push(`SNAPSHOT ainda com placeholder do template ("Onde tô/Próximo passo/Fase") — sobrescreva o SNAPSHOT refletindo a conclusão antes de fechar (o digest é gerado dele)`);
+    blockers.push(T(`SNAPSHOT ainda com placeholder do template ("Onde tô/Próximo passo/Fase") — sobrescreva o SNAPSHOT refletindo a conclusão antes de fechar (o digest é gerado dele)`, `SNAPSHOT still has template placeholders ("Where I am/Next step/Phase") — overwrite the SNAPSHOT to reflect completion before closing (the digest is generated from it)`));
   }
   const feats = splitList(pm.fields.Features || '');
-  if (!feats.length) blockers.push('**Features:** vazio — R.4/R.7 exigem vínculo a feature');
+  if (!feats.length) blockers.push(T('**Features:** vazio — R.4/R.7 exigem vínculo a feature', '**Features:** empty — R.4/R.7 require a link to a feature'));
   for (const ft of feats) {
     const r = featureConcludedOk(root, ft, spec.id);
     if (!r.ok) blockers.push(r.why);
   }
   const dg = P(spec.dir, 'digest.md');
-  if (!exists(dg)) autos.push('digest.md ausente — será gerado no close (≤2.000B)');
+  if (!exists(dg)) autos.push(T('digest.md ausente — será gerado no close (≤2.000B)', 'digest.md missing — will be generated at close (≤2,000B)'));
   else {
     const b = digestMeasure(read(dg));
-    if (b > 2000) autos.push(`digest.md com ${b}B > 2000B — será re-gerado no close`);
+    if (b > 2000) autos.push(T(`digest.md com ${b}B > 2000B — será re-gerado no close`, `digest.md is ${b}B > 2000B — will be regenerated at close`));
   }
   // (sem auto-rollup de feature no close: tamanho de feature não é gerido pelo harness — rollup é manual/opcional)
   const closeTestCmd = ((manifest(root).commands || {}).test || '').trim();
-  if (closeTestCmd) autos.push(`suíte do projeto roda 1× no close (${truncate(closeTestCmd, 40)}) — falha aborta sem mover nada`);
+  if (closeTestCmd) autos.push(T(`suíte do projeto roda 1× no close (${truncate(closeTestCmd, 40)}) — falha aborta sem mover nada`, `project suite runs once at close (${truncate(closeTestCmd, 40)}) — a failure aborts without moving anything`));
   return { blockers, autos, feats, verifyPending };
 }
 // checklist ordenado (≤1,2KB) — mesmo texto no --dry e no close bloqueado (A1: --dry opcional e inofensivo)
 function checklistText(spec, st, dry) {
   const items = [...st.blockers.map((b) => `✗ ${b}`), ...st.autos.map((a) => `▸ ${a}`)];
-  const head = `== close ${spec.id}${dry ? ' --dry' : ''} — ${items.length} pendência(s) ==`;
+  const T = (pt, en) => tr(LANG, pt, en);
+  const head = T(`== close ${spec.id}${dry ? ' --dry' : ''} — ${items.length} pendência(s) ==`, `== close ${spec.id}${dry ? ' --dry' : ''} — ${items.length} pending item(s) ==`);
   const foot = st.blockers.length
-    ? `pronto: NÃO — resolva ${st.blockers.length} bloqueio(s) (✗) e rode: node scripts/specctl.mjs close ${spec.id}`
-    : `pronto: SIM — os passos ▸ são automáticos: node scripts/specctl.mjs close ${spec.id}`;
+    ? T(`pronto: NÃO — resolva ${st.blockers.length} bloqueio(s) (✗) e rode: node scripts/specctl.mjs close ${spec.id}`, `ready: NO — resolve ${st.blockers.length} blocker(s) (✗) and run: node scripts/specctl.mjs close ${spec.id}`)
+    : T(`pronto: SIM — os passos ▸ são automáticos: node scripts/specctl.mjs close ${spec.id}`, `ready: YES — the ▸ steps are automatic: node scripts/specctl.mjs close ${spec.id}`);
   const L = [head, ...items, foot];
   let omitted = 0;
   while (bytesOf(L.join('\n')) > 1100 && L.length > 2) { L.splice(L.length - 2, 1); omitted++; }
-  if (omitted) L.splice(L.length - 1, 0, `… +${omitted} pendência(s) omitida(s)`);
+  if (omitted) L.splice(L.length - 1, 0, T(`… +${omitted} pendência(s) omitida(s)`, `… +${omitted} pending item(s) omitted`));
   return L.join('\n');
 }
 function cmdClose(pos, flags) {
   const root = requireRoot();
   const spec = findSpec(root, pos[0]);
-  if (spec.phase === 'archive') { out(`close: ${spec.id} já está em docs/archive/ — nada a fazer (idempotente)`); process.exit(0); }
-  if (spec.phase === 'discard') die(`close: ${spec.id} está em discard/ — SPEC descartada não fecha`);
+  if (spec.phase === 'archive') { out(tr(LANG, `close: ${spec.id} já está em docs/archive/ — nada a fazer (idempotente)`, `close: ${spec.id} is already in docs/archive/ — nothing to do (idempotent)`)); process.exit(0); }
+  if (spec.phase === 'discard') die(tr(LANG, `close: ${spec.id} está em discard/ — SPEC descartada não fecha`, `close: ${spec.id} is in discard/ — a discarded SPEC does not close`));
   if (spec.phase === 'future') {
     const st0 = parseMain(readSafe(P(spec.dir, 'main.md'))).fields.Status || 'draft';
-    die(`close exige SPEC em active/ — ${spec.id} está em future/ (status ${st0}). Rota: node scripts/specctl.mjs ${st0 === 'paused' ? 'resume' : 'activate'} ${spec.id}, termine o trabalho e rode o close.`);
+    die(tr(LANG, `close exige SPEC em active/ — ${spec.id} está em future/ (status ${st0}). Rota: node scripts/specctl.mjs ${st0 === 'paused' ? 'resume' : 'activate'} ${spec.id}, termine o trabalho e rode o close.`, `close requires a SPEC in active/ — ${spec.id} is in future/ (status ${st0}). Route: node scripts/specctl.mjs ${st0 === 'paused' ? 'resume' : 'activate'} ${spec.id}, finish the work and run close.`));
   }
   const st = closeStage(root, spec);
   if (flags.dry) { out(checklistText(spec, st, true)); process.exit(st.blockers.length ? 1 : 0); }
@@ -2544,7 +2574,7 @@ function cmdClose(pos, flags) {
     const r = runCli(root, ['verify', spec.id]);
     if (r.code !== 0) {
       process.stderr.write(r.out.endsWith('\n') ? r.out : r.out + '\n');
-      die(`close ABORTADO: verify falhou (relato acima). Critérios aprovados mantêm a evidência estampada — corrija e rode o close de novo.`);
+      die(tr(LANG, `close ABORTADO: verify falhou (relato acima). Critérios aprovados mantêm a evidência estampada — corrija e rode o close de novo.`, `close ABORTED: verify failed (report above). Passed criteria keep their stamped evidence — fix it and run close again.`));
     }
     vPass = vTotal;
   }
@@ -2552,14 +2582,14 @@ function cmdClose(pos, flags) {
   // (porte P nunca roda teste até aqui; é ESTE passo que impede arquivar sem nenhum teste ter rodado).
   // Label vazio = capacidade inexistente: N/A reportado no atestado, nunca PASS silencioso nem bloqueio.
   const testCmd = ((manifest(root).commands || {}).test || '').trim();
-  let testNote = 'N/A (sem label test)';
+  let testNote = tr(LANG, 'N/A (sem label test)', 'N/A (no test label)');
   if (testCmd) {
     process.stdout.write(`suite: $ ${testCmd}\n`);
     try { execSync(testCmd, { cwd: root, stdio: 'pipe', timeout: 600000 }); testNote = 'PASS'; }
     catch (e) {
       const detail = truncate(String(e.stdout || '') + String(e.stderr || e.message || ''), 1500);
       process.stderr.write(detail.endsWith('\n') ? detail : detail + '\n');
-      die(`close ABORTADO: suíte do projeto falhou (${testCmd}). Corrija e rode o close de novo — nada foi movido.`);
+      die(tr(LANG, `close ABORTADO: suíte do projeto falhou (${testCmd}). Corrija e rode o close de novo — nada foi movido.`, `close ABORTED: project suite failed (${testCmd}). Fix it and run close again — nothing was moved.`));
     }
   }
   // 2. digest gerado+MEDIDO (A2) — commit/data finais injetados na extração
@@ -2584,20 +2614,21 @@ function cmdClose(pos, flags) {
   const AE = [], AW = [];
   auditBase(root, AE, AW);
   // atestado consolidado (≤30 linhas)
-  out(`== close ${spec.id} — atestado ==`);
+  const T = (pt, en) => tr(LANG, pt, en);
+  out(T(`== close ${spec.id} — atestado ==`, `== close ${spec.id} — attestation ==`));
   out(`verify ${vPass}/${vTotal} · suite ${testNote} · digest ${dgBytes}B · lint ${E.length}/${W.length} · audit ${AE.length}/${AW.length}`);
   out(`docs/archive/${spec.id}`);
   if (E.length || AE.length) {
-    for (const e of [...E, ...AE].slice(0, 10)) process.stderr.write(`ERRO  ${e.f}: ${e.m}\n`);
-    out('ATENÇÃO: lint/audit reportaram erro(s) acima — corrija antes do commit');
+    for (const e of [...E, ...AE].slice(0, 10)) process.stderr.write(T(`ERRO  ${e.f}: ${e.m}\n`, `ERROR   ${e.f}: ${e.m}\n`));
+    out(T('ATENÇÃO: lint/audit reportaram erro(s) acima — corrija antes do commit', 'WARNING: lint/audit reported error(s) above — fix them before committing'));
     process.exit(1);
   }
-  out('nada mais a rodar · commit: git add -A && git commit');
+  out(T('nada mais a rodar · commit: git add -A && git commit', 'nothing else to run · commit: git add -A && git commit'));
   // menu de FINALIZAÇÃO git — o MODELO pergunta e executa; specctl NUNCA faz merge/push/delete sozinho
-  out(`— finalização (o modelo PERGUNTA ao usuário e executa; nada automático) — branch ${curBranch} · base ${baseBranch}`);
-  out(`  1. commitar; depois: (a) merge direto em ${baseBranch}  OU  (b) push + abrir PR para ${baseBranch}`);
-  out(`  2. voltar (checkout) para ${baseBranch} e git pull?`);
-  out(`  3. deletar a branch de trabalho ${curBranch}?`);
+  out(T(`— finalização (o modelo PERGUNTA ao usuário e executa; nada automático) — branch ${curBranch} · base ${baseBranch}`, `— finalization (the model ASKS the user and runs it; nothing automatic) — branch ${curBranch} · base ${baseBranch}`));
+  out(T(`  1. commitar; depois: (a) merge direto em ${baseBranch}  OU  (b) push + abrir PR para ${baseBranch}`, `  1. commit; then: (a) merge directly into ${baseBranch}  OR  (b) push + open a PR to ${baseBranch}`));
+  out(T(`  2. voltar (checkout) para ${baseBranch} e git pull?`, `  2. go back (checkout) to ${baseBranch} and git pull?`));
+  out(T(`  3. deletar a branch de trabalho ${curBranch}?`, `  3. delete the work branch ${curBranch}?`));
 }
 
 // ---------------------------------------------------------------- adopt-workspace / entrypoints
@@ -2607,10 +2638,10 @@ function cmdAdoptWorkspace(pos) {
   const spec = findSpec(root, pos[0]);
   const pm = parseMain(read(P(spec.dir, 'main.md')));
   const ws = (pm.fields.Workspace || '—').trim();
-  if (ws === 'inline') { out('workspace inline — artefatos já vivem na pasta da SPEC, nada a adotar'); process.exit(0); }
-  if (!ws || ws === '—') die(`${spec.id} sem **Workspace:** declarado no main.md — nada a adotar (modo external registra ex.: tasks/prd-<slug>/)`);
+  if (ws === 'inline') { out(tr(LANG, 'workspace inline — artefatos já vivem na pasta da SPEC, nada a adotar', 'inline workspace — artifacts already live in the SPEC folder, nothing to adopt')); process.exit(0); }
+  if (!ws || ws === '—') die(tr(LANG, `${spec.id} sem **Workspace:** declarado no main.md — nada a adotar (modo external registra ex.: tasks/prd-<slug>/)`, `${spec.id} has no **Workspace:** declared in main.md — nothing to adopt (external mode records e.g. tasks/prd-<slug>/)`));
   const src = path.resolve(root, ws);
-  if (!isDir(src)) die(`workspace declarado não existe: ${ws}`);
+  if (!isDir(src)) die(tr(LANG, `workspace declarado não existe: ${ws}`, `declared workspace does not exist: ${ws}`));
   let count = 0;
   const skip = new Set(['tmp', 'node_modules', '.git']);
   fs.cpSync(src, spec.dir, {
@@ -2623,7 +2654,7 @@ function cmdAdoptWorkspace(pos) {
     },
   });
   appendLog(spec.dir, 'nota', (l) => tr(l, `adopt-workspace: snapshot de ${ws} copiado para a pasta da SPEC (${count} arquivo(s)) — workspace original preservado`, `adopt-workspace: snapshot of ${ws} copied into the SPEC folder (${count} file(s)) — original workspace preserved`));
-  out(`adotado: ${count} arquivo(s) de ${ws} → ${relOf(root, spec.dir)} (snapshot pré-archive; o workspace NÃO foi movido)`);
+  out(tr(LANG, `adotado: ${count} arquivo(s) de ${ws} → ${relOf(root, spec.dir)} (snapshot pré-archive; o workspace NÃO foi movido)`, `adopted: ${count} file(s) from ${ws} → ${relOf(root, spec.dir)} (pre-archive snapshot; the workspace was NOT moved)`));
 }
 
 function projectName(root) {
@@ -2633,21 +2664,28 @@ function projectName(root) {
   } catch { /* sem package.json válido */ }
   return path.basename(root);
 }
-// Alinhado byte a byte com templates/CLAUDE.md e templates/AGENTS.md (placeholders resolvidos):
-// nome preservado do H1 existente, desc/stack preservados no bloco projeto, comandos re-renderizados do manifesto.
+// FONTE ÚNICA dos entrypoints: `specctl entrypoints` gera CLAUDE.md/AGENTS.md daqui (não há mais
+// templates/CLAUDE.md|AGENTS.md). Nome preservado do H1 existente, desc/stack preservados no bloco projeto,
+// comandos re-renderizados do manifesto. Idioma = LANG do repo (manifesto `lang`).
+// O núcleo docs/RULES.md chega ao agente por import nativo (`@docs/RULES.md`) no CLAUDE.md e por instrução
+// explícita de leitura no AGENTS.md (CLIs sem import).
 function entrypointContent(kind, root, man) {
   const existing = readSafe(P(root, kind));
   const nameM = /^# (?:CLAUDE|AGENTS)\.md — (.+)$/m.exec(existing);
   const name = (nameM && nameM[1].trim()) || projectName(root);
   const cmds = Object.entries(man.commands || {}).filter(([, v]) => v).map(([k, v]) => `- ${k}: \`${v}\``).join('\n')
-    || '- (defina os labels em docs/.spec-system.json → commands)';
+    || tr(LANG, '- (defina os labels em docs/.spec-system.json → commands)', '- (define the labels in docs/.spec-system.json → commands)');
   // bloco do projeto: marcadores PT ou EN (preservados como estão); bloco novo nasce no idioma do repo
   const bm = new RegExp(`(?:${escRe(PROJ_INI)}|${escRe(PROJ_INI_EN)})[\\s\\S]*?(?:${escRe(PROJ_FIM)}|${escRe(PROJ_FIM_EN)})`).exec(existing);
   const projBlock = bm ? bm[0] : tr(LANG,
     `${PROJ_INI}\n## Projeto\n\n(descreva o projeto em 1-2 frases)\n\n**Stack:** —\n${PROJ_FIM}`,
     `${PROJ_INI_EN}\n## Project\n\n(describe the project in 1-2 sentences)\n\n**Stack:** —\n${PROJ_FIM_EN}`);
   const isAgents = kind === 'AGENTS.md';
+  if (LANG === 'en') return entrypointContentEn(kind, name, cmds, projBlock, isAgents);
   const r9 = `**R.9 — 1ª linha de TODA resposta = classificação:** \`[continuidade: SPEC-x]\` (trabalho de SPEC existente) | \`[nova]\` (demanda que muda comportamento/código do produto → exige SPEC) | \`[livre]\` (pergunta, análise, leitura, config de ferramenta, bump de harness — nada que altere o produto; sem SPEC). Ambíguo? PERGUNTE.${isAgents ? '' : ' `/spec` abre os fluxos guiados.'}`;
+  const rulesLine = isAgents
+    ? '**Núcleo (R.1–R.17):** leia `docs/RULES.md` no início de CADA sessão — aqui ele não é carregado sozinho.'
+    : '**Núcleo (R.1–R.17), sempre carregado:** @docs/RULES.md';
   const semHooks = isAgents ? `
 ## Sem hooks? (CLIs sem suporte)
 
@@ -2667,6 +2705,8 @@ function entrypointContent(kind, root, man) {
 3. **\`docs/active/\` VAZIO em \`main\`** — SPEC ativa vive só em branch (CI bloqueia).
 4. **Temporários na pasta da SPEC** — \`tmp/\` (descartável) ou \`evidence/\` (persistente); sem SPEC → \`.scratch/\`. Nunca na raiz.
 5. **PROIBIDO varrer \`scripts/specctl.mjs\` ou re-ler \`docs/rules/*\` só para "garantir compliance"** — os gates dizem o que falta (\`close <id> --dry\`). Ler a rule DA TAREFA no momento do uso é o caminho certo, não viola este ban.
+
+${rulesLine}
 
 ${r9}
 ${semHooks}
@@ -2691,8 +2731,8 @@ ${labelsNote}
 |---|---|
 | Implementar contra lib/framework/API externa cuja API atual você não domina | **Context7 MCP** — confirme assinatura/versão antes de codar (se indisponível: vendor docs / WebSearch) |
 | UI / frontend / estilização | frontend-design (se instalada) |
-| Porte G — fase PRD (se pipeline instalado) | cria-prd |
-| Fases seguintes (se instalado) | cria-techspec → criar-tasks → executar-task → executar-qa/review/bugfix |
+| Porte G — fase PRD (se pipeline instalado) | sdd-create-prd |
+| Fases seguintes (se instalado) | sdd-create-techspec → sdd-create-tasks → sdd-run-task → sdd-run-qa / sdd-review-feature / sdd-fix-bugs |
 
 ## Mapa de referências — ler SÓ no momento do uso
 
@@ -2704,6 +2744,69 @@ ${projBlock}
 GERADO por \`specctl entrypoints\` — edite apenas o bloco projeto (entre marcadores).
 `;
 }
+function entrypointContentEn(kind, name, cmds, projBlock, isAgents) {
+  const r9 = `**R.9 — 1st line of EVERY answer = classification:** \`[continuation: SPEC-x]\` (work on an existing SPEC) | \`[new]\` (request that changes product behavior/code → requires a SPEC) | \`[free]\` (question, analysis, reading, tool config, harness bump — nothing that changes the product; no SPEC). Ambiguous? ASK.${isAgents ? '' : ' `/spec` opens the guided flows (`/spec close | status | pause | resume | import`).'}`;
+  const rulesLine = isAgents
+    ? '**Core (R.1–R.17):** read `docs/RULES.md` at the start of EVERY session — it is not loaded automatically here.'
+    : '**Core (R.1–R.17), always loaded:** @docs/RULES.md';
+  const noHooks = isAgents ? `
+## No hooks? (CLIs without support)
+
+- Start of EVERY session: run \`node scripts/specctl.mjs brief\` and paste the output.
+- \`/spec\` triggers: "start a spec: <request>" · "close the spec" · "spec status" · "pause/resume SPEC-x".
+- Before the PR: \`specctl lint\` and \`audit\`. CI (docs-gate) is the universal floor.
+` : '';
+  const labelsNote = `Labels \`test/typecheck/lint/dev/e2e\` are mirrored in \`docs/.spec-system.json\` — ${isAgents ? '' : 'hooks, '}CI and \`verify:\` read them from there; do not hardcode.`;
+  return `# ${kind} — ${name}
+
+> Hard placement rule: this imperative block ALWAYS stays at the TOP, before any other section. \`specctl entrypoints\` enforces this on regeneration/merge.
+
+## HARD BANS (TIER-0) — apply to EVERY answer
+
+1. **R.6.2** — only the USER accepts incomplete delivery, defers or postpones (any "leave it for later", at ANY moment) — NEVER the AI on its own. ASK item by item (implement now / new SPEC / accept the gap), with the user's quote.
+2. **Append-only LOG** — NEVER edit old entries in the journal.md \`## LOG\`; a correction = a new entry.
+3. **\`docs/active/\` EMPTY on \`main\`** — an active SPEC lives only on a branch (CI blocks).
+4. **Temp files in the SPEC folder** — \`tmp/\` (disposable) or \`evidence/\` (persistent); no SPEC → \`.scratch/\`. Never at the root.
+5. **FORBIDDEN to sweep \`scripts/specctl.mjs\` or re-read \`docs/rules/*\` just to "ensure compliance"** — the gates say what is missing (\`close <id> --dry\`). Reading the rule FOR THE TASK at the moment of use is the right path and does not violate this ban.
+
+${rulesLine}
+
+${r9}
+${noHooks}
+## docs/ structure
+
+- \`docs/RULES.md\` — process core (R.1–R.17); situational detail in \`docs/rules/*\`
+- \`docs/features/<area>.md\` — living memory per area · \`docs/INDEX.md\` — map (GENERATED)
+- \`docs/active|future|archive|discard/SPEC-<ts>-<slug>/\` — main.md (contract) + journal.md (SNAPSHOT + LOG)
+- \`docs/claims/\` — in-flight work visible on main · \`docs/programs/\` — SPEC DAGs · \`docs/PROGRAMS.md\` (GENERATED) + \`docs/ROADMAP.md\` — what to pick up next (\`specctl next\`) · \`docs/DEFERRED.md\` (GENERATED) — R.6.2 deferrals
+- \`docs/TAXONOMY.md\` — canonical areas · \`docs/ARCHITECTURE.md\` — region→feature map
+- \`docs/CONSTITUTION.md\` — principles · manifest: \`docs/.spec-system.json\`
+
+## Commands
+
+${cmds}
+
+${labelsNote}
+
+## Skills and when to trigger them
+
+| Situation | Skill |
+|---|---|
+| Implementing against an external lib/framework/API whose current API you do not know well | **Context7 MCP** — confirm signature/version before coding (if unavailable: vendor docs / WebSearch) |
+| UI / frontend / styling | frontend-design (if installed) |
+| Size L — PRD phase (if the pipeline is installed) | sdd-create-prd |
+| Next phases (if installed) | sdd-create-techspec → sdd-create-tasks → sdd-run-task → sdd-run-qa / sdd-review-feature / sdd-fix-bugs |
+
+## Reference map — read ONLY at the moment of use
+
+\`docs/rules/\`: formats (create/edit artifact) · lifecycle (lifecycle transitions) · programs (SPEC DAG) · interop (external workspace / prd pipeline) · context (compaction/budgets) · retrieval (L3 archive) · verification (\`verify:\` and gates) · team (claims/multi-dev/onboarding) · ci (CI gates).
+
+${projBlock}
+
+---
+GENERATED by \`specctl entrypoints\` — edit only the project block (between markers).
+`;
+}
 function cmdEntrypoints() {
   const root = requireRoot();
   const man = manifest(root);
@@ -2712,7 +2815,7 @@ function cmdEntrypoints() {
     writeFile(P(root, kind), content);
     const b = bytesOf(content);
     const max = kind === 'AGENTS.md' ? 6200 : 6000;
-    out(`${kind}: ${b} bytes${b > max ? ` — AVISO: acima do orçamento de ${max} (R.16); reduza o bloco projeto` : ''}`);
+    out(`${kind}: ${b} bytes${b > max ? tr(LANG, ` — AVISO: acima do orçamento de ${max} (R.16); reduza o bloco projeto`, ` — WARNING: over the ${max} budget (R.16); shrink the project block`) : ''}`);
   }
 }
 
@@ -2762,11 +2865,13 @@ function cmdGuardRead() {
     const activeIds = new Set(act.map((s) => s.id));
     const tm = /^docs\/(active|future|archive|discard)\/(SPEC-[^/]+)/.exec(rel);
     const targetId = tm ? tm[2] : null;
+    // (sem rota "via subagente": hooks PreToolUse também disparam nas tool calls de subagentes)
+    const alHint = `docs/active/${act.length ? act[0].id : '<SPEC-ativa>'}/.allow-read`;
     if ((rel === 'docs/archive' || rel.startsWith('docs/archive/')) && !allowlisted(root, act, targetId)) {
-      deny(`[guard-read] BLOQUEADO (R.8 via ${tool}): busca dentro de docs/archive/ — N3 é acessado via digest/ARCHIVE-INDEX ou subagente (retorno ≤500 tokens).`);
+      deny(tr(LANG, `[guard-read] BLOQUEADO (R.8 via ${tool}): busca dentro de docs/archive/ — N3 é acessado lendo main.md/digest.md direto (sempre livres) ou docs/ARCHIVE-INDEX.md; para mais, adicione o id da SPEC em ${alHint}.`, `[guard-read] BLOCKED (R.8 via ${tool}): search inside docs/archive/ — L3 is accessed by reading main.md/digest.md directly (always allowed) or docs/ARCHIVE-INDEX.md; for more, add the SPEC id to ${alHint}.`));
     }
     if (targetId && !activeIds.has(targetId) && tm[1] !== 'archive' && !allowlisted(root, act, targetId)) {
-      deny(`[guard-read] BLOQUEADO (R.8 via ${tool}): busca dentro de docs/${tm[1]}/${targetId} — SPEC fora do escopo ativo (main.md/digest.md podem ser LIDOS direto; o resto via subagente ou allowlist).`);
+      deny(tr(LANG, `[guard-read] BLOQUEADO (R.8 via ${tool}): busca dentro de docs/${tm[1]}/${targetId} — SPEC fora do escopo ativo (main.md/digest.md podem ser LIDOS direto; o resto via allowlist: adicione '${targetId}' em ${alHint}).`, `[guard-read] BLOCKED (R.8 via ${tool}): search inside docs/${tm[1]}/${targetId} — SPEC outside the active scope (main.md/digest.md can be READ directly; the rest via allowlist: add '${targetId}' to ${alHint}).`));
     }
     process.exit(0);
   }
@@ -2778,7 +2883,7 @@ function cmdGuardRead() {
   const man = manifest(root);
   // C3 (gated ≥4.1.0) — desarmar a leitura-seguro: não ler o próprio specctl.mjs "pra garantir compliance"
   if (/(^|\/)scripts\/specctl\.mjs$/.test(rel) && revGte(man.template_revision, '4.1.0')) {
-    deny(`[guard-read] BLOQUEADO (v4.1): não leia scripts/specctl.mjs para "garantir compliance" — os gates dizem o que falta.\nUse: node scripts/specctl.mjs --help  ·  node scripts/specctl.mjs close <id> --dry`);
+    deny(tr(LANG, `[guard-read] BLOQUEADO (v4.1): não leia scripts/specctl.mjs para "garantir compliance" — os gates dizem o que falta.\nUse: node scripts/specctl.mjs --help  ·  node scripts/specctl.mjs close <id> --dry`, `[guard-read] BLOCKED (v4.1): do not read scripts/specctl.mjs to "ensure compliance" — the gates say what is missing.\nUse: node scripts/specctl.mjs --help  ·  node scripts/specctl.mjs close <id> --dry`));
   }
   if (rel.startsWith('..') || !rel.startsWith('docs/')) process.exit(0);
   const base = path.basename(rel);
@@ -2788,26 +2893,30 @@ function cmdGuardRead() {
   const tm = /^docs\/(active|future|archive|discard)\/(SPEC-[^/]+)\//.exec(rel);
   const targetId = tm ? tm[2] : null;
   const activeHint = act.length ? act[0].id : '<SPEC-ativa>';
-  const exitMsg = (motivo) =>
+  // (sem rota "via subagente": hooks PreToolUse também disparam nas tool calls de subagentes)
+  const exitMsg = (motivo) => tr(LANG,
     `[guard-read] BLOQUEADO (R.8 — isolamento entre SPECs): ${rel}\n` +
     `Motivo: ${motivo}.\n` +
-    `Saídas: (1) leia o digest correspondente (digest.md é livre) ou docs/ARCHIVE-INDEX.md; ` +
-    `(2) delegue a leitura a um SUBAGENTE e receba um resumo (≤500 tokens); ` +
-    `(3) allowlist: adicione a linha '${targetId || '<SPEC-id>'}' em docs/active/${activeHint}/.allow-read.`;
+    `Saídas: (1) leia main.md/digest.md da SPEC direto (sempre livres) ou docs/ARCHIVE-INDEX.md; ` +
+    `(2) allowlist: adicione a linha '${targetId || '<SPEC-id>'}' em docs/active/${activeHint}/.allow-read.`,
+    `[guard-read] BLOCKED (R.8 — isolation between SPECs): ${rel}\n` +
+    `Reason: ${motivo}.\n` +
+    `Ways out: (1) read the SPEC's main.md/digest.md directly (always allowed) or docs/ARCHIVE-INDEX.md; ` +
+    `(2) allowlist: add the line '${targetId || '<SPEC-id>'}' to docs/active/${activeHint}/.allow-read.`);
   if (rel.startsWith('docs/archive/')) {
     if (allowlisted(root, act, targetId)) process.exit(0);
-    deny(exitMsg('conteúdo de docs/archive/ — N3 é acessado via digest/ARCHIVE-INDEX ou subagente'));
+    deny(exitMsg(tr(LANG, 'conteúdo de docs/archive/ — N3 é acessado via main.md/digest.md ou ARCHIVE-INDEX', 'content of docs/archive/ — L3 is accessed via main.md/digest.md or ARCHIVE-INDEX')));
   }
   if (['journal.md', 'state.md', 'memory.md'].includes(base) && targetId && !activeIds.has(targetId)) {
     if (allowlisted(root, act, targetId)) process.exit(0);
-    deny(exitMsg(`${base} pertence a SPEC fora do escopo ativo (ativa: ${act.map((s) => s.id).join(', ') || 'nenhuma'})`));
+    deny(exitMsg(tr(LANG, `${base} pertence a SPEC fora do escopo ativo (ativa: ${act.map((s) => s.id).join(', ') || 'nenhuma'})`, `${base} belongs to a SPEC outside the active scope (active: ${act.map((s) => s.id).join(', ') || 'none'})`)));
   }
   if (man.policy === 'strict') {
     const freeRoots = ['docs/RULES.md', 'docs/rules/', 'docs/INDEX.md', 'docs/ARCHIVE-INDEX.md', 'docs/TAXONOMY.md', 'docs/ARCHITECTURE.md', 'docs/CONSTITUTION.md', 'docs/BOARD.md', 'docs/claims/', 'docs/programs/', 'docs/.spec-system.json'];
     const isFree = freeRoots.some((r) => rel === r || rel.startsWith(r));
     const isOwnSpec = targetId && activeIds.has(targetId);
     if (!isFree && !isOwnSpec) {
-      out(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: `policy=strict: leitura N1 de ${rel} exige confirmação do usuário (R.10 estrito). main.md/digest.md são sempre livres.` } }));
+      out(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: tr(LANG, `policy=strict: leitura N1 de ${rel} exige confirmação do usuário (R.10 estrito). main.md/digest.md são sempre livres.`, `policy=strict: L1 read of ${rel} requires user confirmation (strict R.10). main.md/digest.md are always allowed.`) } }));
       process.exit(0);
     }
   }
@@ -2917,7 +3026,7 @@ function maybeSuggestCompact(input, root) {
     } catch { /* ignora */ }
     const pct = Math.round((usage.tokens / win) * 100);
     const winLabel = win >= CTX_WIN_1M ? '1M' : `${Math.round(win / 1000)}k`;
-    return `[contexto] ~${Math.round(usage.tokens / 1000)}k tokens (${pct}% da janela ${winLabel}) — na PRÓXIMA fronteira de fase: flush do SNAPSHOT/journal e /compact direcionado (tabela "Quando compactar" em docs/rules/context.md). NUNCA no meio de implementação.`;
+    return tr(LANG, `[contexto] ~${Math.round(usage.tokens / 1000)}k tokens (${pct}% da janela ${winLabel}) — na PRÓXIMA fronteira de fase: flush do SNAPSHOT/journal e /compact direcionado (tabela "Quando compactar" em docs/rules/context.md). NUNCA no meio de implementação.`, `[context] ~${Math.round(usage.tokens / 1000)}k tokens (${pct}% of the ${winLabel} window) — at the NEXT phase boundary: flush the SNAPSHOT/journal and run a targeted /compact ("When to compact" table in docs/rules/context.md). NEVER mid-implementation.`);
   } catch { return null; }
 }
 
@@ -2935,17 +3044,17 @@ function cmdGuardWrite() {
   if (rel.startsWith('..')) process.exit(0);
   const base = path.basename(rel);
   if (['docs/INDEX.md', 'docs/ARCHIVE-INDEX.md', 'docs/PROGRAMS.md', 'docs/DEFERRED.md'].includes(rel)) {
-    deny(`[guard-write] BLOQUEADO: ${rel} é GERADO. Caminho correto: edite a fonte (features/TAXONOMY/programs/critérios) e rode: node scripts/specctl.mjs index`);
+    deny(tr(LANG, `[guard-write] BLOQUEADO: ${rel} é GERADO. Caminho correto: edite a fonte (features/TAXONOMY/programs/critérios) e rode: node scripts/specctl.mjs index`, `[guard-write] BLOCKED: ${rel} is GENERATED. Correct path: edit the source (features/TAXONOMY/programs/criteria) and run: node scripts/specctl.mjs index`));
   }
   if (isTempName(base) && inTempGuardScope(rel) && !inAllowedTempDir(rel)) {
     const act = activeSpecs(root);
     const hint = act.length ? `docs/active/${act[0].id}` : 'docs/active/<SPEC>';
-    deny(`[guard-write] BLOQUEADO (R.12): '${base}' parece temporário/artefato fora de área permitida. Caminho correto: ${hint}/tmp/ (descartável) ou ${hint}/evidence/ (persistente); sem SPEC ativa: .scratch/.`);
+    deny(tr(LANG, `[guard-write] BLOQUEADO (R.12): '${base}' parece temporário/artefato fora de área permitida. Caminho correto: ${hint}/tmp/ (descartável) ou ${hint}/evidence/ (persistente); sem SPEC ativa: .scratch/.`, `[guard-write] BLOCKED (R.12): '${base}' looks like a temp file/artifact outside an allowed area. Correct path: ${hint}/tmp/ (disposable) or ${hint}/evidence/ (persistent); with no active SPEC: .scratch/.`));
   }
   if (rel.startsWith('docs/active/')) {
     const branch = currentBranch(root);
     if (isProtectedBranch(branch, root)) {
-      deny(`[guard-write] BLOQUEADO (R.2): escrita em ${rel} na branch protegida '${branch}'. Caminho correto: crie uma branch (git checkout -b feature/<slug>) e escreva lá; rascunho sem branch vai em docs/future/.`);
+      deny(tr(LANG, `[guard-write] BLOQUEADO (R.2): escrita em ${rel} na branch protegida '${branch}'. Caminho correto: crie uma branch (git checkout -b feature/<slug>) e escreva lá; rascunho sem branch vai em docs/future/.`, `[guard-write] BLOCKED (R.2): write to ${rel} on the protected branch '${branch}'. Correct path: create a branch (git checkout -b feature/<slug>) and write there; a draft without a branch goes in docs/future/.`));
     }
   }
   // gates novos SÓ com template_revision ≥ 4.1.0 (repos v4.0 não quebram)
@@ -2961,7 +3070,7 @@ function cmdGuardWrite() {
     const { newText, oldText } = editTexts();
     for (const h of scanSecrets(String(newText))) {
       if (String(oldText).includes(h.lineText)) continue; // linha já estava no arquivo: remediação/edição do entorno não é re-negada
-      deny(`[guard-write] BLOQUEADO (R.15 — pré-write): SEGREDO (${h.tipo}) no conteúdo destinado a ${rel}. Docs NUNCA guardam segredos — escreva <REDACTED:${h.tipo}> no lugar; se a credencial já vazou em outra via, ROTACIONE.`);
+      deny(tr(LANG, `[guard-write] BLOQUEADO (R.15 — pré-write): SEGREDO (${h.tipo}) no conteúdo destinado a ${rel}. Docs NUNCA guardam segredos — escreva <REDACTED:${h.tipo}> no lugar; se a credencial já vazou em outra via, ROTACIONE.`, `[guard-write] BLOCKED (R.15 — pre-write): SECRET (${h.tipo}) in content meant for ${rel}. Docs NEVER hold secrets — write <REDACTED:${h.tipo}> instead; if the credential already leaked elsewhere, ROTATE it.`));
     }
   }
   // (3a) entrada NOVA de LOG via Write/Edit → só via specctl log (Escriba Único); SNAPSHOT/prosa livres
@@ -2969,11 +3078,16 @@ function cmdGuardWrite() {
     const { newText, oldText } = editTexts();
     const heads = newLogHeadings(newText, oldText);
     if (heads.length) {
-      deny(`[guard-write] BLOQUEADO (v4.1 — Escriba Único): entrada nova no ## LOG só via specctl log (a ferramenta carimba NOW+commit+diffstat). Trecho: '${truncate(heads[0], 60)}'.\n` +
+      deny(tr(LANG, `[guard-write] BLOQUEADO (v4.1 — Escriba Único): entrada nova no ## LOG só via specctl log (a ferramenta carimba NOW+commit+diffstat). Trecho: '${truncate(heads[0], 60)}'.\n` +
         `Caminho correto:\n` +
         `  node scripts/specctl.mjs log <id> <tipo> "título"\n` +
         `  corpo multilinha: acrescente --stdin (heredoc/here-string) ou --body-file <arquivo>\n` +
-        `SNAPSHOT e prosa do journal continuam editáveis direto (Edit normal).`);
+        `SNAPSHOT e prosa do journal continuam editáveis direto (Edit normal).`,
+        `[guard-write] BLOCKED (v4.1 — Single Scribe): a new ## LOG entry only via specctl log (the tool stamps NOW+commit+diffstat). Excerpt: '${truncate(heads[0], 60)}'.\n` +
+        `Correct path:\n` +
+        `  node scripts/specctl.mjs log <id> <type> "title"\n` +
+        `  multiline body: add --stdin (heredoc/here-string) or --body-file <file>\n` +
+        `The SNAPSHOT and journal prose stay directly editable (normal Edit).`));
     }
   }
   // (3b) "verify: exit 0" manual em linha de critério sob docs/active/ (anti-spoofing) → só specctl verify
@@ -2986,8 +3100,10 @@ function cmdGuardWrite() {
       const line = nt.slice(m.index, end);
       if (ot.includes(line)) continue; // já existia: não é escrita nova de evidência
       const sid = (rel.match(/docs\/active\/(SPEC-[^/]+)/) || [])[1] || '<id>';
-      deny(`[guard-write] BLOQUEADO (v4.1 anti-spoofing): só specctl verify grava evidência "verify: exit 0" em critério — a ferramenta roda o comando e carimba na hora. Trecho: '${truncate(line, 60)}'.\n` +
-        `Caminho correto: node scripts/specctl.mjs verify ${sid}  (critério manual, sem comando: node scripts/specctl.mjs check ${sid} <n> --evidence "...").`);
+      deny(tr(LANG, `[guard-write] BLOQUEADO (v4.1 anti-spoofing): só specctl verify grava evidência "verify: exit 0" em critério — a ferramenta roda o comando e carimba na hora. Trecho: '${truncate(line, 60)}'.\n` +
+        `Caminho correto: node scripts/specctl.mjs verify ${sid}  (critério manual, sem comando: node scripts/specctl.mjs check ${sid} <n> --evidence "...").`,
+        `[guard-write] BLOCKED (v4.1 anti-spoofing): only specctl verify writes "verify: exit 0" evidence on a criterion — the tool runs the command and stamps it on the spot. Excerpt: '${truncate(line, 60)}'.\n` +
+        `Correct path: node scripts/specctl.mjs verify ${sid}  (manual criterion, no command: node scripts/specctl.mjs check ${sid} <n> --evidence "...").`));
     }
   }
   // Write (arquivo inteiro) no journal: as entradas do LOG anteriores à última precisam sobreviver BYTE A BYTE.
@@ -2996,7 +3112,7 @@ function cmdGuardWrite() {
     const txt = norm(readSafe(path.resolve(fp)));
     const frozen = frozenLogRegion(txt);
     if (frozen && !norm(String(ti.content || '')).includes(frozen)) {
-      deny(`[guard-write] BLOQUEADO (TIER-0): o LOG do journal é append-only — este Write altera ou remove entradas antigas do ## LOG. Caminho correto: edite o SNAPSHOT/última entrada com Edit e adicione entradas novas via node scripts/specctl.mjs log <id> <tipo> "título".`);
+      deny(tr(LANG, `[guard-write] BLOQUEADO (TIER-0): o LOG do journal é append-only — este Write altera ou remove entradas antigas do ## LOG. Caminho correto: edite o SNAPSHOT/última entrada com Edit e adicione entradas novas via node scripts/specctl.mjs log <id> <tipo> "título".`, `[guard-write] BLOCKED (TIER-0): the journal LOG is append-only — this Write changes or removes old ## LOG entries. Correct path: edit the SNAPSHOT/last entry with Edit and add new entries via node scripts/specctl.mjs log <id> <type> "title".`));
     }
   }
   if (base === 'journal.md' && tool !== 'Write') {
@@ -3018,7 +3134,7 @@ function cmdGuardWrite() {
             const posOld = txt.indexOf(oldS);
             if (posOld < 0) continue; // old_string inexistente no arquivo: não nega — o Edit falha sozinho
             if (posOld > logIdx && posOld < lastIdx) {
-              deny(`[guard-write] BLOQUEADO (TIER-0): o LOG do journal é append-only — proibido editar entradas antigas (trecho '${truncate(oldS, 60)}' está antes da última entrada do LOG). Caminho correto: adicione uma NOVA entrada '## ${now()} — [tipo] ...' ao FINAL do arquivo (o SNAPSHOT e a última entrada podem ser editados).`);
+              deny(tr(LANG, `[guard-write] BLOQUEADO (TIER-0): o LOG do journal é append-only — proibido editar entradas antigas (trecho '${truncate(oldS, 60)}' está antes da última entrada do LOG). Caminho correto: adicione uma NOVA entrada '## ${now()} — [tipo] ...' ao FINAL do arquivo (o SNAPSHOT e a última entrada podem ser editados).`, `[guard-write] BLOCKED (TIER-0): the journal LOG is append-only — editing old entries is forbidden (excerpt '${truncate(oldS, 60)}' is before the last LOG entry). Correct path: add a NEW entry via node scripts/specctl.mjs log <id> <type> "title" (the SNAPSHOT and the last entry can be edited).`));
             }
           }
         }
@@ -3051,7 +3167,7 @@ function cmdStampCheck() {
   if (eligible && txt.includes('{{NOW}}')) {
     txt = txt.split('{{NOW}}').join(now());
     writeFile(abs, txt);
-    out(`[stamp-check] {{NOW}} resolvido para ${now()} em ${rel}`);
+    out(tr(LANG, `[stamp-check] {{NOW}} resolvido para ${now()} em ${rel}`, `[stamp-check] {{NOW}} resolved to ${now()} in ${rel}`));
   }
   // 2) timestamps novos ±24h (warn stdout)
   const underDocs = !!root && rel.startsWith('docs/');
@@ -3068,13 +3184,13 @@ function cmdStampCheck() {
     const t = parseTs(m[0]);
     if (t && Math.abs(t.getTime() - Date.now()) > 24 * 3600 * 1000) drift.push(m[0]);
   }
-  if (drift.length) out(`[stamp-check] AVISO (R.6): timestamp(s) fora de ±24h do relógio (NOW=${now()}): ${drift.slice(0, 3).join(', ')} — use {{NOW}} ou o NOW injetado, nunca invente data.`);
+  if (drift.length) out(tr(LANG, `[stamp-check] AVISO (R.6): timestamp(s) fora de ±24h do relógio (NOW=${now()}): ${drift.slice(0, 3).join(', ')} — use {{NOW}} ou o NOW injetado, nunca invente data.`, `[stamp-check] WARNING (R.6): timestamp(s) outside ±24h of the clock (NOW=${now()}): ${drift.slice(0, 3).join(', ')} — use {{NOW}} or the injected NOW, never invent a date.`));
   // 3) secret-scan no arquivo tocado (deny-feedback = exit 2) — escopo R.15: docs/ e entrypoints.
   // Código do projeto fica de fora: URL local tipo postgres://postgres:postgres@localhost bloqueava TODA edição.
   const hits = eligible ? scanSecrets(txt) : [];
   if (hits.length) {
     const h = hits[0];
-    deny(`[stamp-check] SEGREDO detectado (${h.tipo}, linha ${h.line}) em ${rel}. R.15: docs NUNCA guardam segredos — substitua AGORA por <REDACTED:${h.tipo}> e ROTACIONE a credencial exposta (exceção auditada ao append-only cobre a remediação).`);
+    deny(tr(LANG, `[stamp-check] SEGREDO detectado (${h.tipo}, linha ${h.line}) em ${rel}. R.15: docs NUNCA guardam segredos — substitua AGORA por <REDACTED:${h.tipo}> e ROTACIONE a credencial exposta (exceção auditada ao append-only cobre a remediação).`, `[stamp-check] SECRET detected (${h.tipo}, line ${h.line}) in ${rel}. R.15: docs NEVER hold secrets — replace it NOW with <REDACTED:${h.tipo}> and ROTATE the exposed credential (the audited append-only exception covers the remediation).`));
   }
   process.exit(0);
 }
@@ -3090,7 +3206,7 @@ function cmdSessionClose() {
   // -uall: pasta nova não-rastreada (SPEC recém-criada) aparece arquivo a arquivo — senão o journal.md dela some numa linha "?? dir/"
   const st = spawnSync('git', ['status', '--porcelain', '-uall'], { cwd: root, encoding: 'utf8' });
   if (st.error || st.status !== 0) {
-    process.stderr.write(`[session-close] AVISO: git status falhou: ${(st.stderr || (st.error && st.error.message) || '').trim()} — verificação de journal pulada\n`);
+    process.stderr.write(tr(LANG, `[session-close] AVISO: git status falhou: ${(st.stderr || (st.error && st.error.message) || '').trim()} — verificação de journal pulada\n`, `[session-close] WARNING: git status failed: ${(st.stderr || (st.error && st.error.message) || '').trim()} — journal check skipped\n`));
     process.exit(0);
   }
   const changed = (st.stdout || '').split('\n').filter((l) => l.trim()).map((l) => {
@@ -3103,7 +3219,7 @@ function cmdSessionClose() {
   if (codeChanged && !journalChanged) {
     out(JSON.stringify({
       decision: 'block',
-      reason: `Código alterado nesta sessão sem atualização do journal da SPEC ativa (R.6.1). Antes de encerrar: sobrescreva o SNAPSHOT e adicione uma entrada datada ao LOG em docs/active/${act[0].id}/journal.md — ou registre por que não se aplica.`,
+      reason: tr(LANG, `Código alterado nesta sessão sem atualização do journal da SPEC ativa (R.6.1). Antes de encerrar: sobrescreva o SNAPSHOT e adicione uma entrada datada ao LOG em docs/active/${act[0].id}/journal.md — ou registre por que não se aplica.`, `[session-close] Code changed in this session without updating the active SPEC's journal (R.6.1). Before ending: overwrite the SNAPSHOT and add a LOG entry (node scripts/specctl.mjs log ${act[0].id} <type> "title") in docs/active/${act[0].id}/journal.md — or record why it does not apply.`),
     }));
   }
   process.exit(0);
@@ -4163,7 +4279,7 @@ x
     if (!stGitCommit(root)) return;
     expect(stFeatureBranch(root), 'checkout feature/x falhou');
     const rn = runCli(root, ['new', 'demo', '--size', 'S', '--features', 'core']);
-    expectRun(rn, 0, 'criada', 'new --size S');
+    expectRun(rn, 0, 'created', 'new --size S');
     const id = (/(SPEC-\d{8}-\d{4}-demo)/.exec(rn.out) || [])[1];
     const dir = P(root, 'docs', 'active', id);
     let main = read(P(dir, 'main.md'));
@@ -4181,7 +4297,7 @@ x
     writeFile(P(root, 'docs', 'features', 'core.md'), stFeatureCoreEn(idPrefix(id)));
     expect(stGitCommit(root), 'commit falhou');
     const rc = runCli(root, ['close', id]);
-    expectRun(rc, 0, 'atestado', 'close em repo EN');
+    expectRun(rc, 0, '— attestation ==', 'close em repo EN');
     const ad = P(root, 'docs', 'archive', id);
     const dg = read(P(ad, 'digest.md'));
     expect(dg.includes('**Delivered:** delivered (criteria 1/1') &&dg.includes('**Final commit:**') && dg.includes('the tool measures'), `digest não saiu em EN — ${truncate(dg, 400)}`);
@@ -4199,7 +4315,7 @@ x
     stLangEn(root);
     expectRun(runCli(root, ['index']), 0, null, 'index');
     expectRun(runCli(root, ['lint']), 0, null, 'lint de docs PT em repo EN');
-    expectRun(runCli(root, ['pause', id, '--reason', 'aguardando API']), 0, 'pausada', 'pause --reason');
+    expectRun(runCli(root, ['pause', id, '--reason', 'aguardando API']), 0, 'paused:', 'pause --reason');
     const main = read(P(root, 'docs', 'future', id, 'main.md'));
     expect(/^\*\*Pausada em:\*\* .* — aguardando API$/m.test(main) && !main.includes('**Paused at:**'), `pause trocou o idioma do main PT — ${truncate(main, 400)}`);
     const j = read(P(root, 'docs', 'future', id, 'journal.md'));
@@ -4234,6 +4350,53 @@ x
     expect(j.includes('— [decisão] via decisao') && j.includes('— [decisão] via decision') && j.includes('— [conclusão] via'), `tipos não normalizados para o idioma do journal PT — ${truncate(j.slice(-300), 300)}`);
     expectRun(runCli(root, ['log', id, 'decidido', 'x']), 1, 'tipo inválido', 'tipo inexistente segue erro');
     expectRun(runCli(root, ['new', 'x', '--future', '--size', 'L', '--porte', 'G']), 1, 'não ambos', 'alias + canônico juntos é erro');
+  });
+  fixture('en-mensagens-close-lint', () => {
+    // repo lang=en: mensagens da CLI em EN (checklist do close, lint), sem prosa PT
+    const root = stBase(tmp, 'en-msgs');
+    stLangEn(root);
+    stFeatureBranch(root);
+    const id = stActiveSpec(root);
+    writeFile(P(root, 'docs', 'features', 'core.md'), stFeatureCoreEn(''));
+    runCli(root, ['index']);
+    const dry = runCli(root, ['close', id, '--dry']);
+    expectRun(dry, 1, 'ready: NO', 'close --dry EN');
+    expect(dry.out.includes('pending item(s)') && dry.out.includes('criterion 1') && !/pendência|critério|pronto:/.test(dry.out), `close --dry com prosa PT — saída: ${truncate(dry.out, 400)}`);
+    writeFile(P(root, 'docs', 'features', 'core.md'), '# core\n');
+    const rl = runCli(root, ['lint']);
+    expectRun(rl, 1, 'ERROR   docs/features/core.md: feature without a **Keywords:** line', 'lint EN');
+    expect(/lint: \d+ error\(s\), \d+ warning\(s\)/.test(rl.out) && !/ERRO |AVISO|erro\(s\)/.test(rl.out), `lint com prosa PT — saída: ${truncate(rl.out, 400)}`);
+    const nf = runCli(root, ['close', 'SPEC-29990101-0000-nada']);
+    expectRun(nf, 1, '[specctl] ERROR: SPEC', 'die EN');
+  });
+  fixture('entrypoints-en-pt', () => {
+    // entrypoints: EN em repo lang=en; nos dois idiomas skills sdd-* e o núcleo RULES.md alcança o agente
+    const root = stBase(tmp, 'ep-en');
+    stLangEn(root);
+    expectRun(runCli(root, ['entrypoints']), 0, 'CLAUDE.md:', 'entrypoints EN');
+    const c = read(P(root, 'CLAUDE.md')), a = read(P(root, 'AGENTS.md'));
+    expect(/^\*\*Core \(R\.1–R\.17\), always loaded:\*\* @docs\/RULES\.md$/m.test(c) && c.includes('sdd-create-prd') && c.includes('[continuation: SPEC-x]') && c.includes('/spec close') && c.includes(PROJ_INI_EN), `CLAUDE.md EN incompleto — ${truncate(c, 300)}`);
+    expect(!/cria-prd|executar-|Comandos|Estrutura/.test(c + a), 'entrypoint EN com nome antigo/prosa PT');
+    expect(a.includes('read `docs/RULES.md` at the start of EVERY session') && a.includes('## No hooks?'), 'AGENTS.md EN sem instrução de leitura do RULES');
+    expect(bytesOf(c) <= 6000 && bytesOf(a) <= 6200, `orçamento: CLAUDE ${bytesOf(c)} / AGENTS ${bytesOf(a)}`);
+    expectRun(runCli(root, ['lint']), 0, null, 'lint com entrypoints EN');
+    const pt = stBase(tmp, 'ep-pt');
+    expectRun(runCli(pt, ['entrypoints']), 0, 'CLAUDE.md:', 'entrypoints PT');
+    const cp = read(P(pt, 'CLAUDE.md')), ap = read(P(pt, 'AGENTS.md'));
+    expect(/^\*\*Núcleo \(R\.1–R\.17\), sempre carregado:\*\* @docs\/RULES\.md$/m.test(cp) && cp.includes('sdd-create-prd') && cp.includes('[continuidade: SPEC-x]') && cp.includes(PROJ_INI), 'CLAUDE.md PT sem import do RULES/skills novas');
+    expect(!/cria-prd|criar-tasks|executar-/.test(cp + ap) && ap.includes('leia `docs/RULES.md`'), 'entrypoint PT com skill antiga ou AGENTS sem RULES');
+  });
+  fixture('en-guard-read-sem-subagente', () => {
+    // deny do guard-read em EN e sem a rota "via subagente" (hooks PreToolUse disparam nos subagentes também)
+    const root = stBase(tmp, 'en-gr');
+    stLangEn(root);
+    const aid = stArchiveSpec(root);
+    const payload = JSON.stringify({ tool_name: 'Read', tool_input: { file_path: P(root, 'docs', 'archive', aid, 'journal.md') } });
+    const r = runCli(root, ['guard-read'], payload);
+    expectRun(r, 2, '[guard-read] BLOCKED (R.8', 'guard-read EN');
+    expect(r.out.includes('.allow-read') && !/subagent|BLOQUEADO/i.test(r.out), `guard-read EN cita subagente/PT — ${truncate(r.out, 300)}`);
+    const g = runCli(root, ['guard-read'], JSON.stringify({ tool_name: 'Grep', tool_input: { path: P(root, 'docs', 'archive') } }));
+    expect(g.code === 2 && !/subagent/i.test(g.out), `Grep em archive cita subagente — ${truncate(g.out, 300)}`);
   });
   fixture('init-lang-en', () => {
     const root = P(tmp, 'init-en');
@@ -4274,7 +4437,7 @@ function checkFlagName(name) {
   if (VALUE_FLAGS.includes(name) || BOOL_FLAGS.includes(name)) return;
   const all = [...VALUE_FLAGS, ...BOOL_FLAGS];
   const near = all.filter((f) => editDistance(f, name) <= 2);
-  die(`flag desconhecida --${name}${near.length ? ` — quis dizer --${near[0]}?` : ''} (veja: node scripts/specctl.mjs --help)`);
+  die(tr(LANG, `flag desconhecida --${name}${near.length ? ` — quis dizer --${near[0]}?` : ''} (veja: node scripts/specctl.mjs --help)`, `unknown flag --${name}${near.length ? ` — did you mean --${near[0]}?` : ''} (see: node scripts/specctl.mjs --help)`));
 }
 function editDistance(a, b) {
   const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
@@ -4297,20 +4460,35 @@ function parseArgs(argv) {
         checkFlagName(name);
         if (VALUE_FLAGS.includes(name)) {
           flags[name] = argv[++i];
-          if (flags[name] === undefined) die(`--${name} exige valor`);
+          if (flags[name] === undefined) die(tr(LANG, `--${name} exige valor`, `--${name} requires a value`));
         } else flags[name] = true;
       }
     } else pos.push(a);
   }
   for (const [en, pt] of Object.entries(FLAG_ALIASES)) {
     if (en in flags) {
-      if (pt in flags) die(`use --${en} OU --${pt}, não ambos`);
+      if (pt in flags) die(tr(LANG, `use --${en} OU --${pt}, não ambos`, `use --${en} OR --${pt}, not both`));
       flags[pt] = flags[en]; delete flags[en];
     }
   }
   return { flags, pos };
 }
+const USAGE_EN = () => `specctl v${VERSION} (${SCHEMA}) — single CLI of the SPEC system (SDD v4)
+usage: node scripts/specctl.mjs <command> [args]
+
+lifecycle:      init [--lang pt|en] · new · activate · pause · resume · reopen <id> --reason "..." · close <id> [--dry] · archive · discard
+                new: on main/master only --future is allowed (R.2) — an active SPEC requires a feature branch
+                close: transactional close (verify+digest+archive) — start with close <id> --dry
+                reopen: archive→active (R.6.2 fix — improper close); discard does not reopen
+                PT aliases: --porte (=--size, accepts P|M|G) · --motivo (=--reason) · --cita (=--quote)
+scribe:         log <id> <type> "title" [--stdin|--body-file <f>] · check <id> <n> [--evidence "..."]
+closing:        digest <id> [--stdin|--file <f>] [--fix] · rollup <area> · escalate <id> <M|L> · deescalate <id> <S|M> --quote "..."
+validation:     lint [--strict] [--target-main] · audit [--pr --base <sha>] [--deps] [--main-gate] · verify <id> [--all] · self-test
+context:        brief [--compact] [--agent <id>] · capsule · stamp · index · next [--program <slug>] · entrypoints · adopt-workspace <id>
+hooks:          guard-read · guard-write · stamp-check · session-close
+`;
 function usage(code = 1) {
+  if (LANG === 'en') { (code ? process.stderr : process.stdout).write(USAGE_EN()); process.exit(code); }
   (code ? process.stderr : process.stdout).write(`specctl v${VERSION} (${SCHEMA}) — CLI única do sistema SPEC (SDD v4)
 uso: node scripts/specctl.mjs <comando> [args]
 
@@ -4329,6 +4507,9 @@ hooks:          guard-read · guard-write · stamp-check · session-close
 }
 
 const [, , cmd, ...rest] = process.argv;
+// idioma já no parse de flags/usage (antes de requireRoot): leitura SILENCIOSA do manifesto — manifesto
+// inválido não emite aviso aqui (o aviso continua saindo, uma vez, pelo manifest() do comando)
+try { const r0 = findRoot(process.cwd()); if (r0 && JSON.parse(read(P(r0, 'docs', '.spec-system.json'))).lang === 'en') LANG = 'en'; } catch { /* pt */ }
 const { flags, pos } = parseArgs(rest);
 try {
   switch (cmd) {
@@ -4367,5 +4548,5 @@ try {
     default: usage();
   }
 } catch (e) {
-  die(`falha inesperada em '${cmd}': ${e.message}${process.env.SPECCTL_DEBUG ? '\n' + e.stack : ''}`);
+  die(`${tr(LANG, `falha inesperada em '${cmd}'`, `unexpected failure in '${cmd}'`)}: ${e.message}${process.env.SPECCTL_DEBUG ? '\n' + e.stack : ''}`);
 }

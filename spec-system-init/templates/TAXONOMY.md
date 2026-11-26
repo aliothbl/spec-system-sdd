@@ -1,13 +1,13 @@
-# TAXONOMY.md — vocabulário canônico de áreas
+# TAXONOMY.md — canonical area vocabulary
 
-> Orçamento-alvo: ≤1.600 bytes. Toda feature de `docs/features/` DEVE corresponder a uma área daqui (R.4).
-> Área nova = confirmação explícita do usuário (R.13). Namespaces com `/` (ex.: `api/auth`).
-> Formato por linha: `- <area> — definição 1 linha (aliases proibidos: x→area)`
+> Target budget: ≤1,600 bytes. Every feature in `docs/features/` MUST match an area listed here (R.4).
+> New area = explicit user confirmation (R.13). Namespaces use `/` (e.g. `api/auth`).
+> Line format: `- <area> — one-line definition (forbidden aliases: x→area)`
 
-## Áreas
+## Areas
 
-<!-- Exemplos — remova ao preencher:
-- api/auth — autenticação e sessão do backend (aliases proibidos: login→api/auth, sso→api/auth)
-- web/checkout — fluxo de compra no frontend (aliases proibidos: carrinho→web/checkout)
-- infra/ci — pipelines de build, teste e deploy (aliases proibidos: actions→infra/ci, gha→infra/ci)
+<!-- Examples — remove when filling in:
+- api/auth — backend authentication and session (forbidden aliases: login→api/auth, sso→api/auth)
+- web/checkout — frontend purchase flow (forbidden aliases: cart→web/checkout)
+- infra/ci — build, test and deploy pipelines (forbidden aliases: actions→infra/ci, gha→infra/ci)
 -->

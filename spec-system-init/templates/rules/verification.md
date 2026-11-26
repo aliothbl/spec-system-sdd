@@ -1,79 +1,85 @@
-# Verificação — gate, evidência e graders POR PORTE
+# Verification — gate, evidence and graders BY SIZE
 
-> Referência sob demanda (R.6.1/R.6.2). Leia antes de marcar critério `[x]`, fechar fase ou abrir PR. Como o critério vira `[x]` depende do PORTE: P carimba (timestamp+commit); M/G roda o `verify:`.
+> On-demand reference (R.6.1/R.6.2). Read before marking a criterion `[x]`, closing a phase or opening a PR. How a criterion becomes `[x]` depends on SIZE: S stamps (timestamp+commit); M/L run `verify:`.
 
-## Porte decide a forma da evidência
+## Size decides the form of evidence
 
-| Porte | Como o critério fecha | Evidência | pass^3 | evidence/ |
+| Size | How the criterion closes | Evidence | pass^3 | evidence/ |
 |---|---|---|---|---|
-| **P** | `specctl check <id> <n>` — carimba `(NOW, commit)` | timestamp + commit | não | não |
-| **M/G** | `specctl verify <id> --all` — roda o `verify:` do critério | exit 0 do teste-ALVO, GRAVADO pela ferramenta | só G + flaky | relatórios |
+| **S** | `specctl check <id> <n>` — stamps `(NOW, commit)` | timestamp + commit | no | no |
+| **M/L** | `specctl verify <id>` — runs the pending criteria's `verify:` | exit 0 of the TARGET test, WRITTEN by the tool | only L + flaky | reports |
 
-**Porte P — leve por design:**
-- Critério P NÃO tem `| verify:` (lint recusa) — fecha com `specctl check <id> <n>`, que estampa timestamp + commit atual. `check` RECUSA critério com `verify:` (rota obrigatória: verify).
-- O `commands.test` do manifesto roda **1× DENTRO do `close`** — não é passo do agente: a suíte precisa passar para arquivar, mas você não a invoca a cada critério.
-- **NÃO crie suíte nem script novo só para dar `verify:` num P** — é ajuste pontual. Se de fato precisa de teste dedicado, o porte virou M: escale (`specctl escalate <id> M`).
-- Sem `evidence/`, sem `pass^3`.
+**Size S — light by design:**
+- An S criterion has NO `| verify:` (lint refuses) — it closes with `specctl check <id> <n>`, which stamps timestamp + current commit. `check` REFUSES a criterion with `verify:` (mandatory route: verify).
+- The manifest's `commands.test` runs **once INSIDE `close`** — not an agent step: the suite must pass to archive, but you don't run it per criterion.
+- **Do NOT create a suite or script just to give an S criterion a `verify:`** — it's a one-off tweak. If it really needs a dedicated test, the size became M: escalate (`specctl escalate <id> M`).
+- No `evidence/`, no `pass^3`.
 
-**Porte M/G — o critério aponta o alvo:**
-- `verify:` aponta o **teste-ALVO** daquele critério (ex.: `<test> auth/login.spec`), **nunca a suíte inteira** — o alvo é o que este critério prova; a suíte completa roda 1× no `close` (label `test` do manifesto).
-- `specctl verify <id>` roda os `verify:` dos critérios **pendentes** (na hora do evento — critérios ainda não implementados não são tocados); `--all` re-verifica também os já `[x]`. Sucesso grava `[x] (NOW, commit, verify: exit 0)`. O `close` **NÃO re-executa** critério com evidência **gravada pela ferramenta** — carimbo à mão não ganha isenção (spoofing).
-- Relatórios brutos de verificação → `evidence/` (persistente, referenciável do critério); nunca no journal.
+**Size M/L — the criterion points at the target:**
+- `verify:` points at that criterion's **TARGET test** (e.g. `<test> auth/login.spec`), **never the whole suite** — the target is what this criterion proves; the full suite runs once in `close` (manifest label `test`).
+- `specctl verify <id>` runs the `verify:` of **pending** criteria (at the event — not-yet-implemented criteria aren't touched); `--all` also re-runs those already `[x]` (rarely needed). Success writes `[x] (NOW, commit, verify: exit 0)`. `close` does **NOT re-run** a criterion with evidence **written by the tool** — a hand-made stamp gets no exemption (spoofing).
+- Raw verification reports → `evidence/` (persistent, referenceable from the criterion); never in the journal.
 
-## Fonte dos comandos: o manifesto
+## How commands run
 
-`docs/.spec-system.json` → `commands: { test, typecheck, lint, dev, e2e }`. Rode SEMPRE pelos labels — PROIBIDO hardcodar `npm run ...`/`bun ...` em critérios, docs ou hooks. Label vazio = capacidade inexistente no projeto.
+`verify:` commands and the close suite run through the system shell (`/bin/sh`; `cmd.exe` on Windows) from the repo root, output captured. Timeouts: **300 s per `verify:` command**, **600 s for the `commands.test` suite** in `close`. A timeout counts as a failure. Write `verify:` commands that work in the shell of every OS the team uses.
 
-## Comando inexistente ≠ comando que falhou
+## Source of commands: the manifest
 
-- **Label vazio:** a fase sai como `N/A (sem comando)` no relatório — limitação REPORTADA; nunca PASS silencioso, nunca bloqueio.
-- **Comando existe e falhou:** PROBLEMA REAL. Pare, corrija, re-rode. PROIBIDO reclassificar falha como limitação ou pular a fase.
+`docs/.spec-system.json` → `commands: { test, typecheck, lint, dev, e2e }`. ALWAYS run via the labels — FORBIDDEN to hardcode `npm run ...`/`bun ...` in criteria, docs or hooks. Empty label = capability missing in the project.
 
-## Regra port-safe (OBRIGATÓRIA em todo teste que sobe servidor)
+## Missing command ≠ failed command
 
-Porta fixa quebra em paralelo/CI (`EADDRINUSE`) e trava o `verify` em timeout mudo. Servidor de teste SEMPRE em **porta efêmera** (`listen(0)`; o teste lê a porta real de `srv.address().port` — nunca hardcode) e SEMPRE **propagando o stderr do processo filho** (`stdio: ['ignore','pipe','inherit']` — senão a falha some).
+- **Empty label:** the phase reports `N/A (no command)` — a REPORTED limitation; never a silent PASS, never a block.
+- **Command exists and failed:** REAL PROBLEM. Stop, fix, re-run. FORBIDDEN to reclassify a failure as a limitation or skip the phase.
 
-## Gate em fases (ordem fixa; falha interrompe a sequência)
+## Port-safe rule (MANDATORY in every test that starts a server)
 
-**Quando roda:** o gate completo + relatório é ritual de **fechamento/PR** (e de fim de fase em G). Durante a execução de M, feche critérios com o `verify:` alvo — não rode o gate inteiro por critério.
+A fixed port breaks in parallel/CI (`EADDRINUSE`) and hangs `verify` until a silent timeout. Test servers ALWAYS on an **ephemeral port** (`listen(0)`; the test reads the real port from `srv.address().port` — never hardcode) and ALWAYS **propagating the child process's stderr** (`stdio: ['ignore','pipe','inherit']` — otherwise the failure vanishes).
 
-| # | Fase | Comando | PASS quando |
+## Phased gate (fixed order; a failure stops the sequence)
+
+**When it runs:** the full gate + report is a **close/PR** ritual (and end of phase in L). During M execution, close criteria with the target `verify:` — don't run the whole gate per criterion.
+
+| # | Phase | Command | PASS when |
 |---|---|---|---|
-| 1 | Build | build do projeto, se houver (sem label dedicado: declare-o no `verify:` do critério que dele depende) | compila/empacota sem erro |
-| 2 | Types | label `typecheck` | zero erros |
-| 3 | Lint | label `lint` | zero erros (warns: reportar) |
-| 4 | Testes | label `test`; label `e2e` quando o critério cobre fluxo completo | x/y verdes; cobertura reportada se disponível |
-| 5 | Secrets | `node scripts/specctl.mjs lint` (secret-scan em docs/) + varrer o diff de código | zero achados (R.15) |
-| 6 | Diff review | `git diff --stat` + leitura dos arquivos alterados | sem mudança não intencional, erro engolido ou caso-borda óbvio |
+| 1 | Build | project build, if any (no dedicated label: declare it in the `verify:` of the criterion that depends on it) | compiles/bundles without error |
+| 2 | Types | label `typecheck` | zero errors |
+| 3 | Lint | label `lint` | zero errors (warnings: report) |
+| 4 | Tests | label `test`; label `e2e` when the criterion covers a full flow | x/y green; coverage reported if available |
+| 5 | Secrets | `node scripts/specctl.mjs lint` (secret-scan of docs/) + scan the code diff yourself | zero findings (R.15) |
+| 6 | Diff review | `git diff --stat` + reading the changed files | no unintended change, swallowed error or obvious edge case |
 
-## Relatório (evidência de M/G para R.6.1)
+**Secret-scan coverage (R.15):** guard-write blocks a secret BEFORE it is written to `docs/`; stamp-check (PostToolUse) scans the written file in `docs/`, `CLAUDE.md` and `AGENTS.md`; `lint` scans `docs/`. **None of them scans source code** — phase 5's code-diff scan is on you. Finding in docs → replace with `<REDACTED:type>` (the audited exception to append-only and to "never rewrite", R.5/R.15) + `[note]` of the redaction in the journal, and ROTATE the exposed secret.
+
+## Report (M/L evidence for R.6.1)
 
 ```
-RELATÓRIO DE VERIFICAÇÃO — SPEC-<id> — YYYY-MM-DD HH:MM — commit abc1234
+VERIFICATION REPORT — SPEC-<id> — YYYY-MM-DD HH:MM — commit abc1234
 Build:   PASS             Types:  PASS
-Lint:    PASS (2 warns)   Testes: PASS (41/41, 84%)
-E2E:     N/A (sem comando)
-Secrets: PASS             Diff:   6 arquivos, revisado
-Veredito: PRONTO | NÃO PRONTO
-Pendências: 1. ...
+Lint:    PASS (2 warns)   Tests:  PASS (41/41, 84%)
+E2E:     N/A (no command)
+Secrets: PASS             Diff:   6 files, reviewed
+Verdict: READY | NOT READY
+Pending: 1. ...
 ```
 
-Persista em `evidence/` (nome determinístico, ex.: `evidence/verify-fase3.md`) e aponte do critério ou do journal. Relatório não persistido NÃO é evidência. Porte P dispensa relatório — o carimbo do `check` basta.
+Persist in `evidence/` (deterministic name, e.g. `evidence/verify-phase3.md`) and point to it from the criterion or the journal. A report not persisted is NOT evidence. Size S needs no report — the `check` stamp suffices.
 
-## Graders — critérios não automatizáveis
+## Graders — non-automatable criteria
 
-| Grader | Quando usar | Como o critério registra |
+| Grader | When to use | How the criterion records it |
 |---|---|---|
-| **code** | determinístico: teste, exit code, diff de schema | sufixo `verify:` com o comando |
-| **rule** | forma verificável: regex, schema, contagem | sufixo `verify:` com grep/validador |
-| **model** | qualidade subjetiva: clareza de texto, UX, tom | subagente avalia por rubrica escrita → relatório em `evidence/`; o critério aponta a evidência — grader model NUNCA fecha critério sozinho |
-| **human** | aceite de contrato, julgamento final | sufixo `evidence: manual @usuario`; R.6.2: só o USUÁRIO aceita incompleto |
+| **code** | deterministic: test, exit code, schema diff | `verify:` suffix with the command |
+| **rule** | verifiable form: regex, schema, count | `verify:` suffix with grep/validator |
+| **model** | subjective quality: text clarity, UX, tone | subagent evaluates against a written rubric → report in `evidence/`; the criterion points to the evidence — a model grader NEVER closes a criterion alone |
+| **human** | contract acceptance, final judgment | `evidence: manual @user` suffix; R.6.2 (rules/lifecycle.md §5.1): only the USER accepts incomplete |
 
-Prefira sempre o grader mais determinístico que o critério suportar; desça na tabela só quando o de cima não capturar o critério.
+Always prefer the most deterministic grader the criterion supports; go down the table only when the one above can't capture it.
 
-## pass@k — verificações flaky (SÓ porte G)
+## pass@k — flaky checks (size L ONLY)
 
-- `pass@1` = passou de primeira · `pass@3` = ≥1 sucesso em 3 · `pass^3` = 3/3 consecutivos.
-- **`pass^3` só se aplica a porte G com flakiness OBSERVADA:** rode 3× e exija 3/3 (ou conserte a flakiness). `pass@3` serve a diagnóstico, não a aceite. Em P/M, verificação flaky é bug a corrigir, não a tolerar.
-- Intermitência persistente é problema real: registre `[descoberta]` no journal e trate como bug. Não jogue o dado até passar.
-- **Critério sobre saída ESTOCÁSTICA/IA** (ex.: desenho por IA produz grafo válido) é o outro uso legítimo: capacidade fecha com `pass@3`; regressão crítica de release exige `pass^3` — as k execuções registradas em `evidence/`. Grader flaky em gate de fechamento é anti-padrão: conserte o grader, nunca role o dado.
+- `pass@1` = passed first time · `pass@3` = ≥1 success in 3 · `pass^3` = 3/3 consecutive.
+- **`pass^3` applies only to size L with OBSERVED flakiness:** run 3× and require 3/3 (or fix the flakiness). `pass@3` is for diagnosis, not acceptance. In S/M, a flaky check is a bug to fix, not tolerate.
+- Persistent intermittency is a real problem: log `[discovery]` in the journal and treat it as a bug. Don't roll the dice until it passes.
+- **Criteria on STOCHASTIC/AI output** (e.g. AI drawing produces a valid graph) are the other legitimate use: capability closes with `pass@3`; a release-critical regression requires `pass^3` — the k runs recorded in `evidence/`. A flaky grader in a close gate is an anti-pattern: fix the grader, never roll the dice.

@@ -1,58 +1,76 @@
 ---
-description: Operador do ciclo de vida de SPECs (SDD v4) — abrir, fechar, pausar, retomar, importar, status
-argument-hint: [fechar | status | pausar | retomar | importar <artefato> | <demanda de nova SPEC>]
+description: SPEC lifecycle operator (SDD v4) — open, close, pause, resume, import, status
+argument-hint: [close | status | pause | resume | import <artifact> | <new SPEC request>]
 ---
 
 # /spec
 
-Argumentos recebidos: `$ARGUMENTS`
+Arguments: `$ARGUMENTS`
 
-Roteie pela PRIMEIRA palavra de `$ARGUMENTS`. Qualquer outra primeira palavra = rota "nova SPEC" (última seção).
+Route by the FIRST word of `$ARGUMENTS` (case-insensitive):
 
-## `fechar` — fluxo de fechamento (ler docs/rules/lifecycle.md §5)
+| Route | Aliases (PT) |
+|---|---|
+| `close` | `fechar` |
+| `status` | — |
+| `pause` | `pausar` |
+| `resume` | `retomar` |
+| `import <artifact>` | `importar` |
 
-O fechamento é UM comando transacional (`close`) precedido dos passos de JULGAMENTO. Nunca escreva digest à mão nem chame `archive` direto.
+- First word is a route → run that route; the remaining words are its arguments.
+- **Single word that is NOT a route** (e.g. `clsoe`, `stats`, `fix`) → do NOT guess. ASK the user whether they meant a route — suggest the closest one (e.g. "did you mean `/spec close`?") — or a new SPEC about that word.
+- **Several words, first is not a route** → new SPEC request (last section).
+- Empty → ask whether to open a new SPEC (and what for) or run a route; suggest `status`.
 
-1. Identifique a SPEC ativa da branch (única pasta em `docs/active/`; se houver mais de uma, pergunte qual).
-2. `node scripts/specctl.mjs close <id> --dry` — lista TUDO que falta (não muta nada). Use essa lista como roteiro.
-3. **R.6.2 item a item:** para CADA critério `[ ]` que o --dry apontou, pergunte ao usuário: implementar agora / mover para SPEC nova / aceitar gap. Aceite grava `[aceito-incompleto: "<citação literal do usuário>" YYYY-MM-DD HH:MM]`. NUNCA decida sozinho; NUNCA agrupe itens numa pergunta só.
-4. Gotchas e decisões candidatos → apresente ao usuário e atualize `docs/features/<area>.md` de TODAS as features tocadas (R.7: linha em Concluídas com SPEC-id). Gotcha citado por ≥3 SPECs → proponha promoção a CONSTITUTION.md/CLAUDE.md.
-5. `[conclusão]` no LOG (`specctl log <id> conclusão "..."`) + SNAPSHOT refletindo a conclusão.
-6. Se o manifesto tem `"interop": "external"` e a SPEC declara `**Workspace:**`: `node scripts/specctl.mjs adopt-workspace <id>` (docs/rules/interop.md).
-7. `node scripts/specctl.mjs close <id>` — roda os `verify:` pendentes + a suíte do projeto 1×, gera o digest, estampa campos, arquiva e imprime o atestado + menu de finalização git (pergunte item a item; nada automático). Se falhar, resolva o que ele listar e repita. O fechamento é decisão humana: QA aprovado NÃO arquiva sozinho.
+## `close` — closing flow (read docs/rules/lifecycle.md §5)
+
+Closing is ONE transactional command (`close`) preceded by the JUDGMENT steps. Never write the digest by hand or call `archive` directly.
+
+1. Identify the branch's active SPEC (the only folder in `docs/active/`; if there are several, ask which).
+2. `node scripts/specctl.mjs close <id> --dry` — lists EVERYTHING that is missing (mutates nothing). Use the list as your script.
+3. **Pipeline outcomes (size L with pipeline):** if the latest `qa-report*.md` has verdict `REJECTED`, the latest `review-report*.md` is `REJECTED`, or `bugs.md` has a `Critical`/`High` bug with status `Open`/`Reopened`, SURFACE each one to the user and ask what to do (fix now / new SPEC / accept the gap with a quote). The CLI does not block on these — the user decides.
+4. **R.6.2 item by item:** for EACH `[ ]` criterion the dry run listed, ask the user: implement now / move to a new SPEC / accept the gap. Acceptance writes `[accepted-incomplete: "<user's literal quote>" YYYY-MM-DD HH:MM]` on the criterion + a `decision` journal entry quoting the user. NEVER decide alone; NEVER bundle items into one question.
+5. Gotcha and decision candidates → present them to the user and update `docs/features/<area>.md` for EVERY touched feature (R.7: a line under `### Completed` with the SPEC id). A gotcha cited by ≥3 SPECs → propose promoting it to CONSTITUTION.md/CLAUDE.md.
+6. `[completion]` entry in the LOG (`node scripts/specctl.mjs log <id> completion "..."`) + SNAPSHOT reflecting completion.
+7. If the manifest has `"interop": "external"` and the SPEC declares a `**Workspace:**`: `node scripts/specctl.mjs adopt-workspace <id>` (docs/rules/interop.md) — BEFORE close.
+8. `node scripts/specctl.mjs close <id>` — runs the pending `verify:` criteria + the project suite once, generates the digest, stamps the fields, archives, and prints the attestation + the git finalization menu (ask item by item; nothing automatic). If it fails, resolve what it lists and run it again. Closing is a human decision: an APPROVED QA does NOT archive by itself.
 
 ## `status`
 
-Rode `node scripts/specctl.mjs brief` e apresente o output.
+Run `node scripts/specctl.mjs brief` and present its output.
 
-## `pausar` — ler docs/rules/lifecycle.md
+## `pause` — read docs/rules/lifecycle.md §7
 
-1. Confirme com o usuário a SPEC e o motivo.
-2. Registre `[nota]` no journal com o estado de retomada (atualize o SNAPSHOT: "Se retomar, ler:").
-3. `node scripts/specctl.mjs pause <id> --motivo "<motivo>"`.
+1. Confirm the SPEC and the reason with the user.
+2. Record the resume state: `node scripts/specctl.mjs log <id> note "..."` and update the SNAPSHOT (`**On resume, read:**`).
+3. `node scripts/specctl.mjs pause <id> --reason "<reason>"`.
 
-## `retomar` — ler docs/rules/lifecycle.md
+## `resume` — read docs/rules/lifecycle.md §7
 
 1. `node scripts/specctl.mjs resume <id>`.
-2. Leia o SNAPSHOT do journal (60 primeiras linhas) e siga "Se retomar, ler:" antes de qualquer código.
+2. Read the journal SNAPSHOT (first 60 lines) and follow `**On resume, read:**` before any code.
 
-## `importar <artefato>` — ler docs/rules/interop.md
+## `import <artifact>` — read docs/rules/interop.md (§ Importing external artifacts)
 
-Artefato recebido é INSUMO, não contrato — o main.md continua sendo o contrato local.
+Read the import section of docs/rules/interop.md even when the manifest has `interop: none` — it is the intake procedure (docs/rules/lifecycle.md §8 has the same steps). A received artifact is INPUT, not contract — main.md remains the local contract.
 
-1. Se não existe SPEC para isso, crie primeiro pela rota "nova SPEC" abaixo.
-2. Copie o artefato ORIGINAL, sem reescrever, para `intake/` na pasta da SPEC.
-3. Normalize ao template (docs/rules/formats.md): gere `prd.md` com RF-N extraídos SOB CONFIRMAÇÃO do usuário e `**Origem:** importado (time X, data, vN)`.
-4. Confronte o artefato com as decisões ativas das features e com CONSTITUTION.md — liste conflitos ANTES do aceite (ex.: "PRD assume Redis; DEC-x padronizou SQS").
-5. Derive/ajuste o main.md a partir do PRD, critérios com `(cobre RF-n)` — validação humana (mudança de contrato).
-6. Marque a fase como `importada (origem)` no SNAPSHOT e retome na primeira fase FALTANTE: só PRD → techspec; PRD+techspec → tasks; tudo → execução. Tasks recebidas ficam em `intake/` como referência (re-planejar localmente).
+1. If there is no SPEC for it yet, create one first through the new SPEC route below.
+2. Copy the ORIGINAL artifact, unchanged, into `intake/` in the SPEC folder.
+3. Normalize to the template (docs/rules/formats-pipeline.md): generate `prd.md` with FR-N extracted UNDER the user's confirmation and `**Origin:** imported (team X, YYYY-MM-DD, vN)`.
+4. Check the artifact against the features' active decisions and CONSTITUTION.md — list conflicts BEFORE acceptance (e.g. "PRD assumes Redis; DEC-x standardized on SQS").
+5. Derive/adjust main.md from the PRD, criteria with `(covers FR-n)` — human validation (contract change).
+6. Mark the phase `imported (origin)` in the SNAPSHOT and resume at the first MISSING phase: PRD only → techspec; PRD+techspec → tasks; everything → execution. Received tasks stay in `intake/` as reference (re-plan locally).
 
-## Qualquer outra coisa — demanda de NOVA SPEC
+## New SPEC request
 
-Trate `$ARGUMENTS` inteiro como a demanda. Classificação `[nova]` já confirmada — pule a inferência R.9.
+Treat the whole of `$ARGUMENTS` as the request. The `[new]` classification is already confirmed — skip R.9 inference.
 
-1. **Checkpoint único** (uma só rodada de perguntas): feature(s) de `docs/TAXONOMY.md` (área nova = confirmação explícita, R.13) + porte `P|M|G` (proponha por sinais: arquivos estimados, features tocadas, nº de critérios) + owner.
-2. Entre em **plan mode** com o draft do `main.md` como o próprio plano (formato em docs/rules/formats.md). A aprovação do plano É a validação humana do contrato.
-3. `node scripts/specctl.mjs new <slug> --porte <P|M|G> --owner @<x> --features <a,b>` (+ `--program <p>` se faz parte de um programa — docs/rules/programs.md; `--workspace <w>` se interop — docs/rules/interop.md; `--future` se não vai ativar agora). Sem `--future`, o `new` já ativa a SPEC e registra o claim — não rode `activate` (ele só serve para rascunhos de `future/`).
-4. Preencha o main.md com o conteúdo aprovado.
-5. Porte G: proponha o próximo passo do arco (prd/techspec — via pipeline se instalado, senão templates nativos de docs/rules/formats.md).
+1. **Single checkpoint** (one round of questions, AskUserQuestion):
+   - area(s) from `docs/TAXONOMY.md` (a new area needs explicit confirmation, R.13);
+   - size `S|M|L` — propose one from signals: estimated files, features touched, number of criteria;
+   - owner;
+   - **size L only**, in the same round: the pipeline path `full | techspec only | tasks only | no pipeline` (with a justified recommendation) and, with a pipeline, the execution mode `autonomous | gated` (docs/rules/lifecycle.md §1). Never choose these silently.
+2. Enter **plan mode** with the `main.md` draft as the plan itself (format in docs/rules/formats.md; density depends on the size L path). Approving the plan IS the human validation of the contract.
+3. `node scripts/specctl.mjs new <slug> --size <S|M|L> --owner @<x> --features <a,b>` (+ `--program <p>` if it belongs to a program — docs/rules/programs.md; `--workspace <w>` with interop — docs/rules/interop.md; `--future` if it will not start now). Without `--future`, `new` already activates the SPEC and records the claim.
+4. Fill main.md with the approved content.
+5. Size L: record the path and execution mode — `node scripts/specctl.mjs log <id> decision "Pipeline: <path>; mode: <autonomous|gated>"` — and propose the next step of the arc (`/sdd-create-prd` or `/sdd-create-techspec` if the pipeline is installed, otherwise the native templates in docs/rules/formats-pipeline.md).

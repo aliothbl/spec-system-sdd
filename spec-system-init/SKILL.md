@@ -1,307 +1,312 @@
 ---
 name: spec-system-init
-description: Initialize, upgrade, or bootstrap the SPEC-driven documentation system v4 (journal + specctl + hooks + claims) in a workspace. Creates docs/ (RULES.md core + rules/, features/, active/, future/, archive/, discard/, claims/, programs/), scripts/specctl.mjs, Claude Code hooks, CI docs-gate and generated CLAUDE.md/AGENTS.md. Use when the user says "inicializar sistema de documentação", "setup specs", "init doc system", "bootstrap docs", "upgrade specs", "migrar specs v3 para v4", "atualizar sistema de documentação", "bootstrap brownfield", "documentar projeto existente com specs", or is starting a new project that needs disciplined spec-based documentation.
-version: v4
+description: Initialize, upgrade, or bootstrap the SPEC-driven documentation system v4 (journal + specctl + hooks + claims) in a workspace. Creates docs/ (RULES.md core + rules/, features/, active/, future/, archive/, discard/, claims/, programs/), scripts/specctl.mjs, Claude Code hooks, CI docs-gate, the sdd-* pipeline skills and generated CLAUDE.md/AGENTS.md. Upgrades v3 → v4 and 4.1.x → 4.2.0. Use when the user says "init doc system", "setup specs", "bootstrap docs", "upgrade specs", "migrate specs v3 to v4", "upgrade the spec system", "bootstrap brownfield", "document existing project with specs" (PT: "inicializar sistema de documentação", "atualizar sistema de documentação", "migrar specs v3 para v4"), or is starting a new project that needs disciplined spec-based documentation.
+version: 4.2.0
 ---
 
-# spec-system-init v4
+# spec-system-init v4.2
 
-Inicializa, atualiza (v3→v4) ou faz bootstrap brownfield do sistema SPEC-driven **v4** no workspace atual. Schema do manifesto: `sdd-4.0` · template_revision atual: `4.1.2` (a CLI grava o valor de `specctl --version`). Fonte da verdade dos formatos: templates desta skill.
+Initializes, upgrades (v3 → v4, 4.1.x → 4.2.0) or bootstraps (brownfield) the SPEC-driven system in the current workspace. Manifest schema: `sdd-4.0` · kit `VERSION`: `4.2.0` (`init` writes the value of `specctl --version` as `template_revision`). Source of truth for formats: `docs/rules/formats.md` (templates in this skill).
 
-**Regras de segurança desta skill:** NUNCA executar passo destrutivo (sobrescrever, mover, remover arquivo, rodar script que altere estado) sem listar o que será feito e obter confirmação explícita. O MODO UPGRADE **sempre apresenta o plano completo antes de aplicar qualquer mudança**. Nunca commitar nada — o usuário decide.
+**Language.** These docs are English only. The CLI is bilingual: it reads PT and EN document markers, writes new content in the manifest's `"lang"` (`pt` | `en`; absent = `pt`), and prints its messages in that language. `init --lang pt|en` sets it.
 
-## O que mudou v3 → v4 (resumo)
+**Safety rules for this skill:** NEVER run a destructive step (overwrite, move, delete a file, run a script that changes state) without listing what will happen and getting explicit confirmation. Both UPGRADE modes **always show the full plan before applying any change**. Never commit — the user decides.
 
-1. `state.md` + `memory.md` fundidos em **`journal.md`** (SNAPSHOT sobrescrito nas 60 primeiras linhas + LOG append-only tipado).
-2. Os 3 scripts `.sh` morrem; **`scripts/specctl.mjs`** (Node ≥18, single-file, zero deps, cross-platform) faz lint/audit/index/brief/verify/transições/self-test.
-3. **Hooks** em `.claude/settings.json`: brief no SessionStart, cápsula por prompt, guards de leitura/escrita, stamp-check, session-close — contexto ENTREGUE, não lido; morre o ritual de Reads + frase de confirmação decorada.
-4. Gate de leitura Nível 1 (R.10 v3) removido no default; `policy: strict` no manifesto restaura o comportamento v3.
-5. **`docs/claims/`** torna o trabalho em voo visível na main (multi-dev); **`docs/programs/<slug>.md`** (manifesto único) substitui o dual-write R.14.
-6. **Porte P|M|G** no main.md roteia a intensidade de processo; artefatos opcionais (prd.md, techspec.md, tasks.md, NN_task.md, qa/review/bugfix, evidence/, intake/) na RAIZ da pasta da SPEC, no molde do harness prd.
-7. RULES.md vira **núcleo ≤5KB + docs/rules/** (progressive disclosure); CLAUDE.md/AGENTS.md **gerados** via `specctl entrypoints`, com bloco do projeto preservado entre `<!-- projeto:início -->` / `<!-- projeto:fim -->`.
-8. Fechamento exige **digest.md ≤2.000 bytes**; INDEX.md, ARCHIVE-INDEX.md e **PROGRAMS.md** são **gerados** (`specctl index`), nunca editados à mão. **Descoberta do próximo trabalho:** `specctl next` (+ resumo no brief) cruza programas (ordem = grafo) + `docs/ROADMAP.md` (ordem = priorização humana de avulsas) + backlog não-priorizado.
-9. Novas regras: **R.15** segredos (`<REDACTED:tipo>` + secret-scan), **R.16** orçamentos por camada lintados, **R.17** trailer `Spec: SPEC-<id>` em commits.
-10. **Interop** com o harness prd via manifesto (`interop: none|external|inline`) — a v4 governa (contrato, memória, aceite, ciclo de vida); o pipeline executa.
+## Mode routing
 
-### v4.1 (delta sobre v4.0 — `template_revision: 4.1.0`)
-
-Princípio: **toda região que um gate valida tem UM escritor — a ferramenta.** O modelo emite significado; o specctl escreve os bytes.
-
-1. **Fechamento transacional** — `specctl close <id>` = stage → valida TUDO → aplica (all-or-nothing, idempotente); `close --dry` lista pendências sem mutar. Substitui o ritual `verify`→`digest`→`archive` e mata o sweep de lint/audit.
-2. **Scribe (bookkeeping por comando)** — `specctl log <id> <tipo> "título"` (append no LOG, deny-redirect no Edit direto; a ferramenta anexa commit+diffstat) e `specctl check <id> <n>` (carimba critério de porte P com timestamp+commit; recusa `verify:`). Anti-spoofing: guard nega "verify: exit 0" manual.
-3. **digest AUTOMÁTICO no close e no discard** — ≤2.000B gerado e medido pela ferramenta; o agente **nunca conta bytes à mão**. Features e INDEX **não têm teto** (memória viva / enumeração gerada); `specctl rollup <area>` é ferramenta MANUAL/opcional.
-4. **Porte P-lite** — critério P sem `| verify:`, fecha por `check`; `commands.test` roda 1× dentro do `close`; sem `evidence/`/`pass^3`. `escalate` (P→M→G, one-way) e `deescalate` (exige citação literal do usuário).
-5. **Guards gated por `template_revision ≥ 4.1.0`** — denies novos (LOG, verify-spoof, guard-read de `scripts/specctl.mjs`, secret-scan pré-write, Grep/Glob em archive) só ativam nesse nível; repos v4.0 não quebram.
-6. **formats fatiado** — `rules/formats.md` core + `rules/formats-pipeline.md` (só porte G); guardas PARE gated por template nos docs situacionais; `lifecycle.md` ganha "caminho quente" no topo.
-7. **Regime de equipe declarado** — `"team": "solo"|"multi"` no manifesto (default solo). Em multi: `activate` imprime a coreografia de publicação do claim (PR trivial), `audit` avisa claim não-publicado na base, cápsula carrega `team=multi`; `rules/team.md` é gated pelo campo, não por inferência.
-
-### v4.1.2 (correções — formato inalterado)
-
-`new` sem `--future` já ativa (e, em `team: multi`, imprime a publicação do claim); `activate` só ativa rascunhos de `future/` e vira no-op numa SPEC ativa. `close`/`verify` pulam critérios `[aceito-incompleto]`; placeholder de `verify:` é só o token `<comando>`. Guards: `Write` não reescreve entradas antigas do LOG; temporários (R.12) só na raiz e em `docs/`; secret-scan do stamp-check restrito a `docs/` e entrypoints. Flags desconhecidas são erro; `--help` sai com 0. `reopen` zera Concluída/Commit final, descarta o digest e exige `[conclusão]` nova. Hooks usam `$CLAUDE_PROJECT_DIR` e `SessionStart` cobre `clear`. Skills do pipeline gravam no journal só via `specctl log`; QA evidencia critérios via `check`/`verify`.
-
-### v4.2 (em andamento) — vocabulário bilíngue na CLI
-
-O `specctl` lê os marcadores de formato em português e em inglês: campos (`**Porte:**`/`**Size:**`, `**Commit final:**`/`**Final commit:**`…), seções (`## Critério de aceite`/`## Acceptance criteria`…), tipos de LOG (`[conclusão]`/`[completion]`…, também sem acento), `[aceito-incompleto: …]`/`[accepted-incomplete: …]` (aspas retas ou curvas), `(cobre RF-n)`/`(covers FR-n)`, `depende de:`/`depends on:`, porte `P|M|G`/`S|M|L` e os marcadores do bloco do projeto. A escrita segue a chave `"lang": "pt" | "en"` do manifesto (ausente = `pt`, saída idêntica à 4.1); ao editar um documento existente, a CLI mantém o idioma dele. `init --lang en` cria o manifesto em inglês. Flags com alias: `--size`/`--porte`, `--reason`/`--motivo`, `--quote`/`--cita`. As mensagens da CLI, o `CLAUDE.md` gerado e a documentação ainda estão em português.
-
-## Roteamento de modos
-
-| Estado detectado no workspace | Modo |
+| State detected in the workspace | Mode |
 |---|---|
-| Sem `docs/` (ou `docs/` sem sistema de specs) | **INIT** |
-| `CLAUDE.md`/`AGENTS.md`/`.claude/settings.json` já existem | **INIT** com sub-modo **MERGE** (nunca sobrescrever cego) |
-| `docs/RULES.md` existe E `docs/.spec-system.json` NÃO existe | **UPGRADE v3→v4** |
-| `docs/.spec-system.json` existe | Já é v4 → reportar; oferecer reparo (`entrypoints`, `lint`, re-merge de hooks) |
-| Código substancial sem features documentadas (pós-init/upgrade) | Oferecer **BROWNFIELD** |
+| No `docs/` (or `docs/` without a spec system) | **INIT** |
+| `CLAUDE.md`/`AGENTS.md`/`.claude/settings.json` already exist | **INIT** with **MERGE** sub-mode (never overwrite blindly) |
+| `docs/RULES.md` exists AND `docs/.spec-system.json` does NOT | **UPGRADE v3 → v4** |
+| `docs/.spec-system.json` with `template_revision` < `4.2.0` | **UPGRADE 4.1.x → 4.2.0** |
+| `docs/.spec-system.json` with `template_revision` ≥ `4.2.0` | Already current → report; offer repair (`entrypoints`, `lint`, hook re-merge) |
+| Substantial code without documented features (after init/upgrade) | Offer **BROWNFIELD** |
 
-Em TODOS os modos, rodar também a **Detecção de ambiente** (pipeline prd + ECC, seção própria abaixo).
+In EVERY mode, also run **Environment detection** (own section below).
 
 ---
 
-## MODO INIT
+## INIT MODE
 
-### Step 1 — Inspecionar estado atual
+### Step 1 — Inspect current state
 
-Detectar com `ls`/Read (try-catch):
-- `docs/.spec-system.json` existe? → já é v4. Reportar versão do manifesto e parar (oferecer reparo).
-- `docs/RULES.md` sem manifesto? → desviar para **MODO UPGRADE**.
-- `docs/` existe com outro conteúdo? → **PARAR**. Perguntar: "Já existe `docs/`. Abortar (A) ou continuar mesclando (M)?" Default: abortar.
-- `CLAUDE.md` / `AGENTS.md` no root existem? → marcar para MERGE (Step 7), não sobrescrever.
-- `.claude/settings.json` existe? → marcar para merge de hooks (Step 6).
-- `.github/workflows/docs-gate.yml` existe? → perguntar antes de sobrescrever.
-- Repo git? Branch atual? Sem git: avisar que hooks de branch/claims/R.2 dependem de git e sugerir `git init` (só rodar com confirmação).
-- Node ≥18 disponível (`node --version`)? Sem Node: avisar que specctl/hooks/CI não funcionarão e pedir decisão.
+Detect with `ls`/Read (try-catch):
+- `docs/.spec-system.json` exists? → route by `template_revision` (table above).
+- `docs/RULES.md` without manifest? → switch to **UPGRADE v3 → v4**.
+- `docs/` exists with other content? → **STOP**. Ask: "`docs/` already exists. Abort (A) or continue merging (M)?" Default: abort.
+- `CLAUDE.md` / `AGENTS.md` at the root? → mark for MERGE (Step 7); do not overwrite.
+- `.claude/settings.json` exists? → mark for hook merge (Step 6).
+- `.github/workflows/docs-gate.yml` exists? → ask before overwriting.
+- Git repo? Current branch? No git: warn that branch hooks, claims and R.2 depend on git and suggest `git init` (run only with confirmation).
+- Node available (`node --version`)? 20+ recommended, 18 still works. No Node: warn that specctl, hooks and CI will not work and ask for a decision.
 
-### Step 2 — Auto-analisar projeto (NÃO perguntar o que já está documentado)
+### Step 2 — Analyze the project (do NOT ask what is already documented)
 
-**ANTES de fazer qualquer pergunta**, ler o que já existe no workspace para inferir valores dos placeholders. O usuário não deve redigitar o que já está documentado.
+**BEFORE asking anything**, read what exists to infer placeholder values. The user must not retype what is already documented.
 
-**Fontes de inferência (tentar nesta ordem, parar ao achar):**
+**Inference sources (try in order, stop at the first hit):**
 
-**Nome do projeto (`{{PROJECT_NAME}}`):**
-1. `CLAUDE.md` → primeiro heading `# CLAUDE.md — <NAME>` ou `# <NAME>`
-2. `README.md` / `readme.md` → primeiro `# heading`
-3. `package.json` → `"name"` (se monorepo, usar nome root ou pedir confirmação)
-4. `pyproject.toml` → `[project] name` ou `[tool.poetry] name`
+**Project name (`{{PROJECT_NAME}}`):**
+1. `CLAUDE.md` → first heading `# CLAUDE.md — <NAME>` or `# <NAME>`
+2. `README.md` / `readme.md` → first `# heading`
+3. `package.json` → `"name"` (monorepo: use the root name or ask)
+4. `pyproject.toml` → `[project] name` or `[tool.poetry] name`
 5. `Cargo.toml` → `[package] name`
-6. `go.mod` → `module <name>` (última parte após `/`)
+6. `go.mod` → `module <name>` (last segment after `/`)
 7. `composer.json` → `"name"`
-8. `Gemfile` / `*.gemspec` → padrão específico
-9. Fallback: nome da pasta-raiz (basename do cwd)
+8. `Gemfile` / `*.gemspec` → their usual pattern
+9. Fallback: root folder name (basename of cwd)
 
-**Descrição (`{{PROJECT_DESC}}`):**
-1. `CLAUDE.md` → primeiro parágrafo após o heading
-2. `README.md` → primeiro parágrafo após o heading (pulando badges)
+**Description (`{{PROJECT_DESC}}`):**
+1. `CLAUDE.md` → first paragraph after the heading
+2. `README.md` → first paragraph after the heading (skip badges)
 3. `package.json` → `"description"`
 4. `pyproject.toml` → `description`
 5. `Cargo.toml` → `description`
-6. Fallback: `"_(adicionar descrição)_"`
+6. Fallback: `"_(add description)_"`
 
-**Stack (`{{STACK}}`):**
-Combinar múltiplas fontes:
-1. `package.json` → detectar `"type": "module"`, deps principais (react, vue, svelte, next, nuxt, astro, express, fastify, nest, hono, elysia), devDeps (typescript, vite, webpack). Formar string tipo "Node.js + TypeScript + React + Vite".
+**Stack (`{{STACK}}`)** — combine sources:
+1. `package.json` → `"type": "module"`, main deps (react, vue, svelte, next, nuxt, astro, express, fastify, nest, hono, elysia), devDeps (typescript, vite, webpack). Build a string like "Node.js + TypeScript + React + Vite".
 2. `pyproject.toml` / `requirements.txt` → Python + frameworks (fastapi, flask, django, pydantic)
 3. `Cargo.toml` → Rust + frameworks (axum, actix, rocket, tokio)
 4. `go.mod` → Go + libs (gin, echo, fiber)
 5. `*.csproj` / `*.sln` → .NET
-6. `pom.xml` / `build.gradle` → Java/Kotlin + Spring/etc.
-7. `Gemfile` → Ruby + Rails/etc.
-8. `Dockerfile` / `docker-compose.yml` → adicionar "Docker"
-9. Bancos detectáveis em `.env.example`, `docker-compose.yml`, deps (`mysql2`, `pg`, `mongodb`, `mssql`, `@prisma/client`, `typeorm`)
-10. Fallback: analisar extensões de arquivo mais frequentes
+6. `pom.xml` / `build.gradle` → Java/Kotlin + Spring etc.
+7. `Gemfile` → Ruby + Rails etc.
+8. `Dockerfile` / `docker-compose.yml` → add "Docker"
+9. Databases from `.env.example`, `docker-compose.yml`, deps (`mysql2`, `pg`, `mongodb`, `mssql`, `@prisma/client`, `typeorm`)
+10. Fallback: most frequent file extensions
 
-**Comandos (`{{DEV_COMMANDS}}`):**
-1. `package.json` → `"scripts"`. Selecionar relevantes: `install`/`ci`, `dev`/`start`, `build`, `test`, `lint`.
-2. `Makefile` → targets comuns (`install`, `dev`, `test`, `build`, `run`)
-3. `pyproject.toml` → `[tool.poetry.scripts]` ou comandos comuns
-4. `README.md` → seção "Installation" / "Getting started" — extrair blocos ```` ```bash/sh/shell ````
-5. `CLAUDE.md` → se tiver seção "Comandos" / "Commands", copiar
-6. Fallback: bloco placeholder ```` ```bash\n# (adicionar comandos)\n``` ````
+**Commands (`{{DEV_COMMANDS}}`):**
+1. `package.json` → `"scripts"`: pick `install`/`ci`, `dev`/`start`, `build`, `test`, `lint`.
+2. `Makefile` → common targets (`install`, `dev`, `test`, `build`, `run`)
+3. `pyproject.toml` → `[tool.poetry.scripts]` or common commands
+4. `README.md` → "Installation" / "Getting started" section — extract ```` ```bash/sh/shell ```` blocks
+5. `CLAUDE.md` → copy a "Commands" section if present
+6. Fallback: placeholder block ```` ```bash\n# (add commands)\n``` ````
 
-**NOVO v4 — labels mecânicos:** dos comandos detectados, derivar os 5 labels do manifesto `commands: { test, typecheck, lint, dev, e2e }` (string vazia quando não houver). Detectar o gerenciador pelo lockfile (`bun.lock*`→bun, `pnpm-lock.yaml`→pnpm, `yarn.lock`→yarn, `package-lock.json`→npm) e gravar o comando COMPLETO executável (ex.: `pnpm test`, `pnpm tsc --noEmit`). Hooks, CI, `verify:` e skills externas consomem esses labels.
+**Mechanical labels:** from the detected commands, derive the 5 manifest labels `commands: { test, typecheck, lint, dev, e2e }` (empty string when absent). Detect the package manager from the lockfile (`bun.lock*`→bun, `pnpm-lock.yaml`→pnpm, `yarn.lock`→yarn, `package-lock.json`→npm) and store the FULL runnable command (e.g. `pnpm test`, `pnpm tsc --noEmit`). Hooks, CI, `verify:` and the pipeline skills read these labels.
 
-### Step 3 — Apresentar valores detectados e pedir confirmação
+**Language (`lang`):** detect the prose language of `README.md` and `CLAUDE.md` (Portuguese → `pt`, English → `en`). Unclear, mixed or no prose → `en`.
 
-Mostrar ao usuário **em UMA mensagem** os valores pré-preenchidos com as fontes, e pedir para confirmar ou editar:
+### Step 3 — Show detected values and ask for confirmation
+
+Show the pre-filled values with their sources in **ONE message** and ask the user to confirm or edit:
 
 ```
-Detectei os seguintes valores no workspace:
+Detected in the workspace:
 
-📦 Nome: <valor>                    (fonte: <arquivo>)
-📝 Descrição: <valor>               (fonte: <arquivo>)
-🛠️ Stack: <valor>                   (fonte: <arquivo(s)>)
-⚡ Comandos (labels do manifesto):
+Name: <value>                     (source: <file>)
+Description: <value>              (source: <file>)
+Stack: <value>                    (source: <file(s)>)
+Commands (manifest labels):
    test=<...> · typecheck=<...> · lint=<...> · dev=<...> · e2e=<...>
-                                    (fonte: <arquivo>)
-🔒 Policy: standard                 (strict disponível: leitura N1 volta a exigir confirmação, como na v3)
-🔗 Interop: <none | proposta — ver Detecção de ambiente>
+                                  (source: <file>)
+Language: <pt|en>                 (source: <file> | default)  — language the CLI writes documents and messages in
+Policy: standard                  (strict available: L1 reads require confirmation again, as in v3)
+Interop: <none | proposal — see Environment detection>
 
-Confirme com "ok" ou "tudo certo" para usar esses valores, OU
-edite os que quiser ajustar (ex.: "stack: Bun + React + Elysia").
+Reply "ok" to use these values, OR
+edit any of them (e.g. "stack: Bun + React + Elysia", "language: pt").
 ```
 
-Se responder "ok" → prossegue. Se editar um campo → aplica e reusa o resto. Se nenhum achou nada → fazer as perguntas clássicas uma a uma, sinalizando.
+"ok" → proceed. An edited field → apply it and keep the rest. Nothing detected at all → ask the classic questions one at a time, saying so.
 
-### Step 4 — Criar estrutura completa (contrato §1)
+### Step 4 — Create the structure
 
-1. Copiar `templates/scripts/specctl.mjs` → `scripts/specctl.mjs`.
-2. Rodar `node scripts/specctl.mjs init` — cria `docs/{features,active,future,archive,discard,claims,programs}/` vazias + `.scratch/`, o manifesto `docs/.spec-system.json` e o `.gitignore` (`docs/active/**/tmp/`, `.scratch/`). Se `.gitignore` já existe, specctl apenas apenda as linhas ausentes — verificar.
-3. Escrever os templates no projeto, substituindo placeholders (`{{PROJECT_NAME}}`, `{{PROJECT_DESC}}`, `{{STACK}}`, `{{DEV_COMMANDS}}`, `{{TODAY}}`, `{{NOW}}`):
+1. Copy `templates/scripts/specctl.mjs` → `scripts/specctl.mjs`.
+2. Run `node scripts/specctl.mjs init --lang <lang>`. It creates the empty `docs/{features,active,future,archive,discard,claims,programs}/` + `.scratch/`, the manifest `docs/.spec-system.json`, the `TAXONOMY.md`, `CONSTITUTION.md` and `ROADMAP.md` stubs in the chosen language (never overwriting existing files), the generated indexes (`INDEX.md`, `ARCHIVE-INDEX.md`, `PROGRAMS.md`) and the `.gitignore` lines (`docs/active/**/tmp/`, `.scratch/`; appended only when missing — check).
+3. Copy the templates:
 
-| Template da skill | Destino |
+| Skill template | Destination |
 |---|---|
 | `templates/RULES.md` | `docs/RULES.md` |
-| `templates/rules/*.md` (formats, lifecycle, context, retrieval, verification, programs, team, interop, ci) | `docs/rules/` |
-| `templates/TAXONOMY.md` | `docs/TAXONOMY.md` |
+| `templates/rules/*.md` (10 files: formats, formats-pipeline, lifecycle, context, retrieval, verification, programs, team, interop, ci) | `docs/rules/` |
 | `templates/ARCHITECTURE.md` | `docs/ARCHITECTURE.md` |
-| `templates/CONSTITUTION.md` | `docs/CONSTITUTION.md` |
-| `templates/INDEX.md` | `docs/INDEX.md` (stub "gerado"; `specctl index` assume depois) |
 | `templates/commands/spec.md` | `.claude/commands/spec.md` |
-| `templates/skills/*` (8 skills do pipeline prd + assets) | `.claude/skills/` do projeto (vendor por padrão — repo auto-contido) |
-| `templates/agents/task-reviewer.md` | `.claude/agents/task-reviewer.md` |
+| `templates/skills/sdd-*` (8 pipeline skills + assets) | the project's `.claude/skills/` (vendored by default — self-contained repo) |
+| `templates/agents/sdd-task-reviewer.md` | `.claude/agents/sdd-task-reviewer.md` |
 | `templates/ci/docs-gate.yml` | `.github/workflows/docs-gate.yml` |
 
-Data/hora SEMPRE do relógio real (`node scripts/specctl.mjs stamp`; antes do specctl, `date +"%Y-%m-%d %H:%M"`). NUNCA timestamps do treinamento.
+Do not copy an `INDEX.md` stub: `init` already generated the indexes, and `specctl index` owns them. Keep the `TAXONOMY.md`/`CONSTITUTION.md` stubs that `init` wrote.
 
-### Step 5 — Gravar manifesto com commands detectados
+Dates and times ALWAYS come from the real clock (`node scripts/specctl.mjs stamp`; before specctl exists, `date +"%Y-%m-%d %H:%M"`). NEVER timestamps from training data.
 
-Atualizar `docs/.spec-system.json` (JSON válido, schema do contrato §2): `installed_at` = NOW real, `policy` confirmada no Step 3, `interop` conforme Detecção de ambiente, `product: null`, `commands` = labels do Step 2. Validar com parse antes de gravar.
+### Step 5 — Write the manifest values
 
-### Step 6 — Instalar hooks (merge não-destrutivo)
+Update `docs/.spec-system.json` (valid JSON; fields in `docs/rules/formats.md` and `docs/rules/team.md`): `policy` confirmed in Step 3, `interop` per Environment detection, `team` (`solo` unless the user says `multi`), `product: null`, `commands` = labels from Step 2. Keep `lang`, `schema`, `template_revision` and `installed_at` as `init` wrote them. Parse to validate before writing.
 
-Fragmento: `templates/hooks-settings.json` (SessionStart→`brief`, UserPromptSubmit→`capsule`, PreToolUse Read→`guard-read`, PreToolUse Write|Edit→`guard-write`, PostToolUse→`stamp-check`, PreCompact→`brief --compact`, Stop→`session-close`).
+### Step 6 — Install hooks (non-destructive merge)
 
-- `.claude/settings.json` NÃO existe → gravar o fragmento como está.
-- Existe → **MERGE**: Read + parse; para cada evento do fragmento, apendar as entradas specctl que ainda não estão lá (idempotência: pular se já houver entrada com `specctl.mjs` e o mesmo subcomando). Entrada specctl antiga com caminho relativo (`node scripts/specctl.mjs <sub>`, até a 4.1.1) → **substituir** pela forma do fragmento (`node "$CLAUDE_PROJECT_DIR/scripts/specctl.mjs" <sub>`), que não quebra quando a sessão muda de diretório; nunca deixar as duas. **NUNCA remover, reordenar ou alterar hooks que não mencionam `specctl.mjs`.** Validar JSON resultante antes de gravar; parse falhou → mostrar o fragmento e pedir merge manual, sem gravar.
+Fragment: `templates/hooks-settings.json` (SessionStart `startup|resume|clear`→`brief`, SessionStart `compact`→`brief --compact`, UserPromptSubmit→`capsule`, PreToolUse `Read|Grep|Glob`→`guard-read`, PreToolUse `Write|Edit|MultiEdit`→`guard-write`, PostToolUse→`stamp-check`, PreCompact→`brief --compact`, Stop→`session-close`). Every command has the form `node "$CLAUDE_PROJECT_DIR/scripts/specctl.mjs" <sub>`, which keeps working when the session changes directory.
 
-### Step 7 — Gerar CLAUDE.md/AGENTS.md via entrypoints (merge mode)
+- `.claude/settings.json` does NOT exist → write the fragment as is.
+- It exists → **MERGE**: Read + parse; for each event in the fragment, append the specctl entries not yet present (idempotent: skip when an entry with `specctl.mjs` and the same subcommand exists). An old specctl entry with a relative path (`node scripts/specctl.mjs <sub>`) → **replace** it with the fragment's form; never keep both. **NEVER remove, reorder or change hooks that do not mention `specctl.mjs`.** Validate the resulting JSON before writing; if parsing fails, show the fragment and ask for a manual merge without writing.
 
-**REGRA DURA:** o bloco imperativo gerado do harness (hard bans TIER-0 + primeira ação) **SEMPRE fica no INÍCIO do `CLAUDE.md`**, logo após o `# <título>` opcional. Antes de qualquer outra seção — descrição do produto, stack, arquitetura, convenções, comandos, etc. Isso garante que a IA, ao ler o arquivo do topo, encontre as instruções imperativas antes de qualquer contexto técnico. Vale igualmente para `AGENTS.md`.
+### Step 7 — Generate CLAUDE.md/AGENTS.md with `entrypoints`
 
-- **Sem CLAUDE.md/AGENTS.md prévios:** rodar `node scripts/specctl.mjs entrypoints`; em seguida resolver quaisquer placeholders restantes com os valores do Step 3, mantendo TODO conteúdo específico do projeto (descrição, stack, comandos) DENTRO do bloco `<!-- projeto:início -->…<!-- projeto:fim -->` — só assim ele sobrevive a regenerações.
-- **MERGE (arquivo existe):**
-  1. Read do arquivo atual.
-  2. Se contiver bloco v3 (`## AVISO IMPERATIVO PRA IA` / `Primeira ação obrigatória`): avisar e perguntar se substitui pelo bloco gerado v4 (recomendado) ou mantém.
-  3. Montar o arquivo final: bloco gerado v4 no TOPO + `<!-- projeto:início -->` + conteúdo pré-existente do projeto (sem o bloco v3 substituído) + `<!-- projeto:fim -->`.
-  4. Rodar `node scripts/specctl.mjs entrypoints` e conferir que a regeneração preserva o bloco projeto (diff zero).
-  **NUNCA appendar as seções imperativas no final** — viola a regra dura de posicionamento.
+`node scripts/specctl.mjs entrypoints` is the single source of `CLAUDE.md` and `AGENTS.md`. It writes the imperative block (TIER-0 hard bans + first action) at the TOP, and preserves the project block between `<!-- project:start -->` and `<!-- project:end -->` (PT repos: `<!-- projeto:início -->` / `<!-- projeto:fim -->`; both are read). The generated `CLAUDE.md` imports `@docs/RULES.md`; `AGENTS.md` tells the agent to read it. Budgets: `CLAUDE.md` ≤ 6,000 B, `AGENTS.md` ≤ 6,200 B — `entrypoints` warns when the project block pushes a file over.
+
+**HARD RULE:** the generated imperative block ALWAYS sits at the START of the file, right after the `# <title>` line, before any other section (product, stack, architecture, conventions, commands). Never move project content above it.
+
+- **No existing CLAUDE.md/AGENTS.md:** run `entrypoints`, then fill the generated project block with the Step 3 values (description, stack, dev commands). Project-specific content lives ONLY inside the project block — that is the only part that survives regeneration.
+- **MERGE (file exists):**
+  1. Read the current file.
+  2. If it has a v3 block (`## AVISO IMPERATIVO PRA IA` / `Primeira ação obrigatória`): warn and ask whether to replace it with the generated block (recommended) or keep it.
+  3. If it has no project markers, wrap the existing project content (minus any replaced v3 block) in `<!-- project:start -->` … `<!-- project:end -->` in place. **Without markers, `entrypoints` discards the old content.**
+  4. Run `entrypoints` and confirm the project block came through unchanged (zero diff inside the markers).
+  **NEVER append the imperative sections at the end** — it breaks the hard rule.
 
 ### Step 8 — Smoke test
 
-Rodar `node scripts/specctl.mjs lint`. Meta em init limpo: **0 erros, 0 warnings**. Qualquer saída ≠ 0/0 → corrigir antes do report (não entregar sistema que já nasce reprovado). Opcional: oferecer `node scripts/specctl.mjs self-test`.
+Run `node scripts/specctl.mjs index`, then `node scripts/specctl.mjs lint`. Target on a clean init: **0 errors, 0 warnings**. Anything else → fix before reporting (never deliver a system that fails at birth). Optional: offer `node scripts/specctl.mjs self-test`.
 
-### Step 9 — Report final
+### Step 9 — Final report
 
-Usar o **Report padronizado** (seção abaixo), incluindo a instrução de branch protection.
-
----
-
-## MODO UPGRADE v3→v4
-
-**Detecção:** `docs/RULES.md` existe E `docs/.spec-system.json` NÃO existe.
-
-### U.1 — Levantar e APRESENTAR O PLANO (obrigatório, antes de qualquer mudança)
-
-Inventariar e listar em UMA mensagem: SPECs por pasta (active/future/archive/discard, com quais têm `state.md`/`memory.md`); os 3 `.sh` a remover (`generate-index.sh`, `lint-docs.sh`, `audit-docs.sh`); seções CUSTOM do `docs/RULES.md` (delta vs template v3 canônico); CLAUDE.md a mesclar; hooks/CI/`/spec` a instalar; SPECs de archive/discard sem digest (digest retroativo); SPECs ativas que ganharão claim + campos novos (Porte/Owner — propor valores); campos R.14 (`Depende de`/`Bloqueia`/`Ordem`) encontrados → manifestos `programs/<slug>.md` propostos; `tasks/prd-*/` existentes (ver Detecção de ambiente). **Aguardar confirmação explícita. Nada é aplicado antes.**
-
-### U.2 — Infra v4 (após confirmação)
-
-Steps 2–7 do INIT (auto-análise reaproveita o CLAUDE.md v3; confirmação em UMA mensagem; specctl + estrutura + manifesto + hooks + docs-gate + `/spec` + `.gitignore` ganha `.scratch/`). No merge do CLAUDE.md, o bloco imperativo v3 é substituído pelo gerado v4 (regra dura de topo).
-
-### U.3 — Fusão state+memory → journal (por SPEC)
-
-Para CADA pasta `SPEC-*` com `state.md`/`memory.md` (em active/, future/, archive/, discard/):
-1. Criar `journal.md` no formato do contrato §3.3:
-   - **SNAPSHOT** ← `memory.md` (Onde tô/Próximo passo/etc. do TL;DR; **em conflito entre os TL;DRs, o do memory.md vence o do state.md**); `### Fases` ← tabela de fases do state.md; Hipóteses/Respostas-chave/Tentativas que falharam/Arquivos tocados/Onde parei ← seções correspondentes do memory.md.
-   - **LOG** ← Log cronológico do state.md, entradas copiadas VERBATIM na ordem original (append-only preservado; headings normalizados para `## YYYY-MM-DD HH:MM — [tipo] Título` apenas quando o tipo já for inequívoco; na dúvida, manter e anotar).
-2. Renomear originais NA PRÓPRIA PASTA: `state.md` → `state.md.v3.bak`, `memory.md` → `memory.md.v3.bak`. **NUNCA deletar** (R.5).
-3. Fusão ambígua/ilegível → journal mínimo com `[nota] migração v3→v4: revisar *.v3.bak` e listar no report.
-
-### U.4 — RULES fatiado
-
-Substituir `docs/RULES.md` v3 pelo núcleo v4 + `docs/rules/*` (templates). Conteúdo CUSTOM do projeto (regras/seções que não são do template v3 canônico) → `docs/rules/local-overrides.md` com nota de origem e data. Original preservado como `docs/RULES.md.v3.bak`.
-
-### U.5 — Remoção dos 3 .sh
-
-Remover `scripts/generate-index.sh`, `scripts/lint-docs.sh`, `scripts/audit-docs.sh` (já confirmado em U.1 — código do harness, não conteúdo do projeto; substituídos por specctl). Scripts `.sh` alheios ao harness NÃO são tocados.
-
-### U.6 — Digest retroativo
-
-Para cada SPEC em archive/ e discard/ sem `digest.md`: gerar a partir de main+state+memory (≤2.000 bytes, formato §3.4), com a primeira linha após o título marcada **`[digest-auto: revisar]`**. Listar todos no report para revisão humana.
-
-### U.7 — Claims para SPECs ativas
-
-Para cada SPEC em `docs/active/`: criar `docs/claims/SPEC-<id>.md` (formato §5) e gravar no main.md os campos novos confirmados em U.1 (`**Porte:**`, `**Owner:**`; `Features` se ausente). Campos R.14 confirmados viram `docs/programs/<slug>.md` (uma linha por nó; `Bloqueia`/ordem NUNCA são escritos — são derivados).
-
-### U.8 — Fechamento do upgrade
-
-1. `node scripts/specctl.mjs index` (regenera INDEX + ARCHIVE-INDEX).
-2. Secret-scan inicial: `node scripts/specctl.mjs lint` cobre docs/ — relatar achados R.15.
-3. **Janela de compatibilidade N-1:** o lint aceita SPECs ainda em formato v3 com **warning** (não erro) até a migração completa — informar isso e o objetivo de zerar warnings.
-4. Report padronizado (inclui contagem migradas/`[digest-auto]`/pendências + branch protection).
+Use the **Standard report** (below), including the branch protection instruction.
 
 ---
 
-## MODO BROWNFIELD
+## UPGRADE MODE 4.1.x → 4.2.0
 
-Para projeto com código substancial e docs vazias. Pré-requisito: v4 instalada (INIT ou UPGRADE). Tudo roda sob uma **SPEC formal** — o bootstrap é trabalho como outro qualquer.
+**Detection:** `docs/.spec-system.json` exists with `template_revision` < `4.2.0`. The document format does not change: the 4.2 CLI reads every 4.1 document. From 4.0.x, setting the revision also turns on the guards gated at `template_revision ≥ 4.1.0` — say so in the plan.
 
-1. **Abrir SPEC:** em branch própria (R.2), `node scripts/specctl.mjs new bootstrap-docs --porte M --owner @<user>` (G se o repo for muito grande; o `new` já ativa e cria o claim). Fases no SNAPSHOT: varredura → recorte → geração → revisão.
-2. **Varredura (read-only):** mapear diretórios, entrypoints, módulos, rotas, jobs, deps e fronteiras naturais do código.
-3. **Recorte confirmado (R.13 em lote):** propor em UMA mensagem **três recortes alternativos** de áreas — **A** enxuto (~4–6 áreas), **B** médio (~7–12), **C** granular (13+) — cada um com nome da área, definição de 1 linha e paths principais. Usuário escolhe/edita → gravar em `docs/TAXONOMY.md` (a escolha É a confirmação R.13 das áreas).
-4. **Subagentes — 1 por área, em paralelo:** cada um lê SÓ os paths da sua área e gera `docs/features/<area>.md` no formato do contrato §4, com linha `**Origem:** bootstrap — SPEC-<id> (YYYY-MM-DD HH:MM)`: Keywords, Arquivos principais, Resumo, Estado atual (do código REAL), Decisões arquiteturais ativas (inferidas do código, marcadas como inferidas), Gotchas evidentes; "Specs desta feature" = —. Orçamento 6.000 bytes/feature. Nada inventado: só o que o código evidencia.
-5. **ARCHITECTURE.md:** gerar o mapa transversal região→feature (visão que nenhuma feature isolada tem).
-6. **Fechar:** `specctl index` → lint → critérios da SPEC (TAXONOMY confirmada; 1 feature/área; ARCHITECTURE gerada; lint 0 erros) → digest → `specctl archive` → PR com docs-gate.
+### V.1 — Show the plan (mandatory, before any change)
+
+List in ONE message what will happen, then wait for explicit confirmation. Nothing is applied before.
+
+1. Copy the new `templates/scripts/specctl.mjs` → `scripts/specctl.mjs`.
+2. Remove the old PT-named pipeline folders from `.claude/skills/` (`cria-prd`, `cria-techspec`, `criar-tasks`, `executar-task`, `task-review`, `executar-review`, `executar-qa`, `executar-bugfix`) and `.claude/agents/task-reviewer.md`; copy `templates/skills/sdd-*` and `templates/agents/sdd-task-reviewer.md`. Show local changes in the old folders before deleting. **Warn** when `~/.claude/skills/` holds global copies with the same names as the vendored skills (old or new): the user should check with `/skills` which copy loads, and remove or update stale global copies themselves — this skill never touches them.
+3. Replace `.claude/commands/spec.md` with `templates/commands/spec.md` (routes `close | status | pause | resume | import`; PT words stay as aliases). Diff first if the user customized it.
+4. In `.claude/settings.json`, rewrite every specctl hook command to `node "$CLAUDE_PROJECT_DIR/scripts/specctl.mjs" <sub>`, add `clear` to the SessionStart matcher (`startup|resume|clear`), and add any specctl entry from `templates/hooks-settings.json` that is missing. Never touch hooks that do not mention `specctl.mjs`.
+5. Ask about language:
+   - **Keep `pt`** (default for existing projects): leave `lang` as it is; the existing PT `docs/RULES.md` and `docs/rules/` stay.
+   - **Switch to `en`**: set `"lang": "en"` and copy the EN `templates/RULES.md` → `docs/RULES.md` and `templates/rules/*.md` → `docs/rules/` (diff first if customized). Existing PT documents stay valid — the CLI reads both; new content is written in English.
+6. Set `template_revision` to `4.2.0` in `docs/.spec-system.json`.
+7. Run `node scripts/specctl.mjs entrypoints` (the project block is preserved), then `index`, then `lint`.
+
+### V.2 — Apply (after confirmation)
+
+Apply V.1 in order. Parse-validate JSON before every write. Finish with the Standard report (mode `upgrade-4.2`), listing removed folders, the hook entries rewritten, the chosen `lang`, any global-copy warnings and the `lint` result.
 
 ---
 
-## Detecção de ambiente — pipeline prd + ECC
+## UPGRADE MODE v3 → v4
 
-Rodar durante o Step 1 de INIT e U.1 de UPGRADE. A v4 é auto-contida: **nunca modificar o outro harness nem referenciar ECC nos docs gerados.**
+**Detection:** `docs/RULES.md` exists AND `docs/.spec-system.json` does NOT.
 
-- **Pipeline prd — VENDORIZADO POR PADRÃO (v4.1.1):** o harness CARREGA o pipeline em `templates/skills/` (8 skills + assets) e `templates/agents/task-reviewer.md`; o init copia para `.claude/skills/` e `.claude/agents/` DO PROJETO — repo auto-contido, time inteiro na mesma versão. Cópias globais em `~/.claude/skills/`, quando existirem, são executor equivalente e fonte de re-sync — nunca dependência (divergência global×vendorizado = warn no report). `interop` default com pipeline vendorizado: `inline`. Alternativas sob pedido: `external` (skills gravam em `tasks/prd-<slug>/`; `adopt-workspace` no fechamento) · `none` (sem pipeline; templates nativos de rules/formats-pipeline.md).
-  - Em UPGRADE com `tasks/prd-*/` existentes: oferecer vínculo `**Workspace:**` nas SPECs correspondentes ou conversão em SPECs novas.
-- **ECC** (`~/.claude/rules/ecc/`, agents ECC): apenas **reportar** coexistência. Regras ECC são do usuário/máquina; a v4 não depende delas nem as menciona.
+### U.1 — Survey and SHOW THE PLAN (mandatory, before any change)
+
+Inventory and list in ONE message: SPECs per folder (active/future/archive/discard, and which have `state.md`/`memory.md`); the 3 `.sh` scripts to remove (`generate-index.sh`, `lint-docs.sh`, `audit-docs.sh`); CUSTOM sections of `docs/RULES.md` (delta vs the canonical v3 template); CLAUDE.md to merge; hooks/CI/`/spec` to install; archive/discard SPECs without a digest (retroactive digest); active SPECs that will get a claim and the new fields (Size/Owner — propose values); R.14 fields found (`Depende de`/`Bloqueia`/`Ordem`) → proposed `programs/<slug>.md` manifests; existing `tasks/prd-*/` (see Environment detection). **Wait for explicit confirmation. Nothing is applied before.**
+
+### U.2 — v4 infrastructure (after confirmation)
+
+INIT Steps 2–7 (the analysis reuses the v3 CLAUDE.md; confirmation in ONE message; specctl + structure + manifest + hooks + docs-gate + `/spec` + `.gitignore` gets `.scratch/`). In the CLAUDE.md merge, the v3 imperative block is replaced by the generated one (top-position hard rule).
+
+### U.3 — Merge state + memory → journal (per SPEC)
+
+For EVERY `SPEC-*` folder with `state.md`/`memory.md` (in active/, future/, archive/, discard/):
+1. Create `journal.md` in the format of `docs/rules/formats.md` §3:
+   - **SNAPSHOT** ← `memory.md` (Where I am/Next step/etc. from the TL;DR; **when the TL;DRs conflict, memory.md wins over state.md**); `### Phases` ← phase table from state.md; Hypotheses/Key answers/Failed attempts/Files touched/Where I stopped ← matching memory.md sections.
+   - **LOG** ← chronological log from state.md, entries copied VERBATIM in original order (append-only preserved; normalize headings to `## YYYY-MM-DD HH:MM — [type] Title` only when the type is unambiguous; when in doubt, keep and annotate).
+2. Rename the originals IN THE SAME FOLDER: `state.md` → `state.md.v3.bak`, `memory.md` → `memory.md.v3.bak`. **NEVER delete** (R.5).
+3. Ambiguous/unreadable merge → minimal journal with `[note] v3→v4 migration: review *.v3.bak` and list it in the report.
+
+### U.4 — Split RULES
+
+Replace the v3 `docs/RULES.md` with the v4 core + `docs/rules/*` (templates). The project's CUSTOM content (rules/sections not in the canonical v3 template) → `docs/rules/local-overrides.md` with an origin note and date. Keep the original as `docs/RULES.md.v3.bak`.
+
+### U.5 — Remove the 3 .sh scripts
+
+Remove `scripts/generate-index.sh`, `scripts/lint-docs.sh`, `scripts/audit-docs.sh` (already confirmed in U.1 — harness code, not project content; replaced by specctl). Do NOT touch `.sh` scripts unrelated to the harness.
+
+### U.6 — Retroactive digest
+
+For each SPEC in archive/ and discard/ without `digest.md`: generate one from main+state+memory (≤ 2,000 bytes, `docs/rules/formats.md` §4), with the first line after the title marked **`[digest-auto: review]`**. List them all in the report for human review.
+
+### U.7 — Claims for active SPECs
+
+For each SPEC in `docs/active/`: create `docs/claims/SPEC-<id>.md` (`docs/rules/formats.md` §6; claim workflow in `docs/rules/team.md`) and write the new fields confirmed in U.1 into main.md (`**Size:**`, `**Owner:**`; `**Features:**` if missing). Confirmed R.14 fields become `docs/programs/<slug>.md` (`docs/rules/formats.md` §7, one line per node; `Blocks`/order are NEVER written — they are derived).
+
+### U.8 — Finish the upgrade
+
+1. `node scripts/specctl.mjs index` (regenerates INDEX + ARCHIVE-INDEX + PROGRAMS).
+2. Initial secret scan: `node scripts/specctl.mjs lint` covers docs/ — report R.15 findings.
+3. **N-1 compatibility window:** lint accepts SPECs still in v3 format (those with `state.md.v3.bak`) with a **warning**, not an error — say so, and set the goal of zero warnings.
+4. Standard report (migrated count / `[digest-auto]` / pending items + branch protection).
 
 ---
 
-## Report padronizado (todos os modos)
+## BROWNFIELD MODE
+
+For a project with substantial code and empty docs. Prerequisite: v4 installed (INIT or UPGRADE). Everything runs under a **formal SPEC** — the bootstrap is work like any other.
+
+1. **Open the SPEC:** on its own branch (R.2), `node scripts/specctl.mjs new bootstrap-docs --size M --owner @<user>` (L for a very large repo; `new` already activates and creates the claim). Phases in the SNAPSHOT: scan → split → generation → review.
+2. **Scan (read-only):** map directories, entrypoints, modules, routes, jobs, deps and the code's natural boundaries.
+3. **Confirmed split (R.13 in batch):** propose in ONE message **three alternative area splits** — **A** lean (~4–6 areas), **B** medium (~7–12), **C** granular (13+) — each with area name, one-line definition and main paths. The user picks/edits → write `docs/TAXONOMY.md` (the choice IS the R.13 confirmation of the areas).
+4. **Subagents — one per area, in parallel:** each reads ONLY its area's paths and writes `docs/features/<area>.md` in the format of `docs/rules/formats.md` §5, with the line `**Origin:** bootstrap — SPEC-<id> (YYYY-MM-DD HH:MM)`: Keywords, Main files, Summary, Current state (from the REAL code), Active architectural decisions (inferred from code, marked as inferred), evident Gotchas; "Specs for this feature" = —. Features have no size ceiling; keep them to what the code shows. Nothing invented.
+5. **ARCHITECTURE.md:** generate the cross-cutting region→feature map (the view no single feature has).
+6. **Close:** `specctl index` → `lint` → SPEC criteria (TAXONOMY confirmed; one feature per area; ARCHITECTURE generated; lint 0 errors) → `node scripts/specctl.mjs close <id> --dry`, then `node scripts/specctl.mjs close <id>` (generates the digest and archives; never call `archive` directly) → PR with docs-gate.
+
+---
+
+## Environment detection — prd pipeline + ECC
+
+Run during INIT Step 1 and the plan step of both UPGRADE modes. The kit is self-contained: **never modify the other harness and never reference ECC in generated docs.**
+
+- **prd pipeline — VENDORED BY DEFAULT:** the kit ships the pipeline in `templates/skills/sdd-*` (8 skills + assets) and `templates/agents/sdd-task-reviewer.md`; init copies them into the PROJECT's `.claude/skills/` and `.claude/agents/` — self-contained repo, whole team on the same version. Global copies in `~/.claude/skills/`, when present, are an equivalent executor and a re-sync source — never a dependency (global × vendored divergence = warning in the report). Default `interop` with the vendored pipeline: `inline`. Alternatives on request: `external` (skills write to `tasks/prd-<slug>/`; `adopt-workspace` at close) · `none` (no pipeline; native templates from `docs/rules/formats-pipeline.md`). Details: `docs/rules/interop.md`.
+  - In UPGRADE with existing `tasks/prd-*/`: offer a `**Workspace:**` link in the matching SPECs or conversion into new SPECs.
+- **ECC** (`~/.claude/rules/ecc/`, ECC agents): only **report** coexistence. ECC rules belong to the user/machine; the kit neither depends on nor mentions them.
+
+---
+
+## Standard report (all modes)
 
 ```
-[spec-system-init v4 · modo: <init|upgrade|brownfield> · NOW=YYYY-MM-DD HH:MM]
+[spec-system-init 4.2.0 · mode: <init|upgrade-4.2|upgrade-v3|brownfield> · NOW=YYYY-MM-DD HH:MM]
 
-Criados:      <paths>
-Modificados:  <paths — merges de CLAUDE.md/AGENTS.md/settings.json/.gitignore>
-Preservados:  <*.v3.bak> · Removidos: <os 3 .sh — upgrade>
-Manifesto:    sdd-4.0 · policy=<...> · interop=<...> · commands={test,typecheck,lint,dev,e2e}
-Smoke:        node scripts/specctl.mjs lint → <N erros / N warnings> (meta init: 0/0)
-Pendências:   <[digest-auto: revisar] ×N · SPECs v3 em janela compat ×N · achados R.15 · ...>
+Created:      <paths>
+Modified:     <paths — CLAUDE.md/AGENTS.md/settings.json/.gitignore merges>
+Preserved:    <*.v3.bak> · Removed: <the 3 .sh — v3 upgrade | old PT skill folders — 4.2 upgrade>
+Manifest:     sdd-4.0 · template_revision=<...> · lang=<pt|en> · policy=<...> · interop=<...> · team=<...> · commands={test,typecheck,lint,dev,e2e}
+Smoke:        node scripts/specctl.mjs lint → <N errors / N warnings> (init target: 0/0)
+Pending:      <[digest-auto: review] ×N · v3 SPECs in compat window ×N · R.15 findings · global skill copies · ...>
 ```
 
-**Próximos passos (incluir sempre):**
-1. **Branch protection na `main`** exigindo os checks do workflow `docs-gate` (lint --strict, audit --pr, audit --deps, main-gate, index-check) — sem isso R.2/R.7 não têm dente. GitHub → Settings → Branches → Require status checks.
-2. Revisar `docs/TAXONOMY.md` e `docs/CONSTITUTION.md` (stubs) e o bloco projeto do `CLAUDE.md`.
-3. Primeiro trabalho: `/spec <demanda>` (abre checkpoint → plan mode → `specctl new`, que já ativa a SPEC).
-4. Upgrade: revisar `[digest-auto: revisar]` e zerar warnings da janela compat.
-5. Brownfield disponível se houver código sem features documentadas.
+**Next steps (always include):**
+1. **Branch protection on `main`** requiring the `docs-gate` workflow checks (lint --strict, audit --pr, audit --deps, main-gate, index-check) — without it R.2/R.7 have no teeth. GitHub → Settings → Branches → Require status checks.
+2. Review `docs/TAXONOMY.md` and `docs/CONSTITUTION.md` (stubs) and the project block in `CLAUDE.md`.
+3. First work item: `/spec <request>` (opens the checkpoint → plan mode → `specctl new`, which already activates the SPEC).
+4. v3 upgrade: review `[digest-auto: review]` and clear the compat-window warnings.
+5. Brownfield is available if there is code without documented features.
 
 ---
 
-## Anti-patterns (desta skill)
+## Anti-patterns (for this skill)
 
-- ❌ **Sobrescrever** `docs/`, `CLAUDE.md`, `AGENTS.md`, `.claude/settings.json` ou `docs-gate.yml` existentes sem confirmação
-- ❌ Aplicar QUALQUER passo do UPGRADE sem o plano U.1 listado e confirmado
-- ❌ Usar timestamps do treinamento em vez do relógio real (`specctl stamp` / `date`)
-- ❌ **Perguntar info que já está em arquivo existente** — sempre inferir de `package.json`, `README.md`, `CLAUDE.md`, etc. antes
-- ❌ Apresentar perguntas em branco ou em várias mensagens — mostrar tudo pré-preenchido em UMA mensagem
-- ❌ Commitar arquivos criados (deixar para o usuário decidir)
-- ❌ Criar SPECs ou features de exemplo — pastas ficam vazias (exceção: BROWNFIELD cria features REAIS sob SPEC formal)
-- ❌ **Posicionar o bloco imperativo gerado em qualquer lugar que NÃO seja o INÍCIO** do `CLAUDE.md`/`AGENTS.md`; em merge mode, **appendar no final** é violação da regra dura (Step 7)
-- ❌ Deletar `state.md`/`memory.md`/`RULES.md` v3 no upgrade — renomear `*.v3.bak` (R.5)
-- ❌ Editar à mão `INDEX.md`/`ARCHIVE-INDEX.md` (gerados por `specctl index`)
-- ❌ Fazer merge de hooks removendo/alterando hooks alheios ao specctl
-- ❌ Modificar as skills GLOBAIS (`~/.claude/skills/`) do harness prd ou qualquer coisa da ECC — a evolução do pipeline vive nos `templates/skills/` desta skill (fonte canônica) e chega aos projetos por vendor/upgrade
-- ❌ Pular o smoke `specctl lint` ou entregar init com erros/warnings
+- **Overwriting** existing `docs/`, `CLAUDE.md`, `AGENTS.md`, `.claude/settings.json` or `docs-gate.yml` without confirmation
+- Applying ANY upgrade step without the plan listed and confirmed
+- Using training-data timestamps instead of the real clock (`specctl stamp` / `date`)
+- **Asking for info already in existing files** — always infer from `package.json`, `README.md`, `CLAUDE.md`, etc. first
+- Asking blank questions or spreading them over several messages — show everything pre-filled in ONE message
+- Committing the created files (leave it to the user)
+- Creating example SPECs or features — folders stay empty (exception: BROWNFIELD creates REAL features under a formal SPEC)
+- **Placing the generated imperative block anywhere but the START** of `CLAUDE.md`/`AGENTS.md`; in merge mode, **appending it at the end** breaks the hard rule (Step 7)
+- Running `entrypoints` over an existing CLAUDE.md/AGENTS.md before wrapping its content in project markers
+- Deleting v3 `state.md`/`memory.md`/`RULES.md` in the upgrade — rename to `*.v3.bak` (R.5)
+- Hand-editing `INDEX.md`/`ARCHIVE-INDEX.md`/`PROGRAMS.md` (generated by `specctl index`)
+- Merging hooks in a way that removes or changes non-specctl hooks
+- Modifying GLOBAL skills (`~/.claude/skills/`) or anything from ECC — the pipeline evolves in this skill's `templates/skills/` (canonical source) and reaches projects by vendoring/upgrade
+- Skipping the `index` + `lint` smoke test, or delivering an init with errors/warnings
+
+## What changed
+
+- **4.2.0** — The CLI is bilingual: it reads PT and EN markers and writes in the manifest's `lang` (`pt` | `en`; absent = `pt`, output identical to 4.1), with messages in the same language; `init --lang pt|en`; EN flag aliases `--size`/`--reason`/`--quote`. Docs are English only. Pipeline skills renamed to `sdd-*`, agent to `sdd-task-reviewer`; `/spec` routes `close | status | pause | resume | import` (PT aliases kept). `templates/CLAUDE.md`/`AGENTS.md` removed: `specctl entrypoints` is their single source, and the generated `CLAUDE.md` imports `@docs/RULES.md`. New UPGRADE 4.1.x → 4.2.0 mode. Manifest schema stays `sdd-4.0`.
+- **4.1.2** — Bug fixes, format unchanged: `new` without `--future` activates; `activate` only activates `future/` drafts; `close`/`verify` skip `[accepted-incomplete]` criteria; `Write` cannot rewrite old LOG entries; temp-file guard only at the root and in `docs/`; unknown flags are errors; `reopen` resets completion fields, drops the digest and requires a new `[completion]`. Hooks use `$CLAUDE_PROJECT_DIR`, and SessionStart covers `clear`. Pipeline skills write to the journal only via `specctl log`.
+- **4.1.0** — One writer per gated region: the tool. Transactional `close` (`--dry` lists pending items); `log` and `check` do the bookkeeping; digest generated automatically at close/discard (≤ 2,000 B); features and INDEX have no ceiling. Size S-lite (criteria closed by `check`), `escalate`/`deescalate`. New guards gated at `template_revision ≥ 4.1.0`. `formats.md` split into core + `formats-pipeline.md`. `"team": "solo"|"multi"` in the manifest.
+- **4.0** (from v3) — `state.md` + `memory.md` merged into `journal.md`; the 3 `.sh` scripts replaced by `scripts/specctl.mjs` (single file, zero deps); hooks deliver context; `docs/claims/` and `docs/programs/`; size S/M/L; RULES.md core ≤ 5 KB + `docs/rules/`; generated entrypoints and indexes; `specctl next`; R.15 secrets, R.16 budgets, R.17 `Spec:` commit trailer; interop with the prd pipeline.
 
 ## Templates location
 
-Ao lado deste SKILL.md: `templates/RULES.md`, `templates/rules/*` (10 arquivos: formats, formats-pipeline, lifecycle, context, retrieval, verification, programs, team, interop, ci), `templates/CLAUDE.md`, `templates/AGENTS.md`, `templates/TAXONOMY.md`, `templates/ARCHITECTURE.md`, `templates/CONSTITUTION.md`, `templates/INDEX.md`, `templates/commands/spec.md`, `templates/skills/*` (pipeline prd vendorizável: cria-prd, cria-techspec, criar-tasks, executar-task, task-review, executar-review, executar-qa, executar-bugfix — com assets), `templates/agents/task-reviewer.md`, `templates/hooks-settings.json`, `templates/ci/docs-gate.yml`, `templates/scripts/specctl.mjs`.
+Next to this SKILL.md: `templates/RULES.md`, `templates/rules/*` (10 files: formats, formats-pipeline, lifecycle, context, retrieval, verification, programs, team, interop, ci), `templates/TAXONOMY.md`, `templates/ARCHITECTURE.md`, `templates/CONSTITUTION.md` (reference copies; `init` writes the TAXONOMY/CONSTITUTION stubs), `templates/commands/spec.md`, `templates/skills/*` (vendored prd pipeline: sdd-create-prd, sdd-create-techspec, sdd-create-tasks, sdd-run-task, sdd-review-task, sdd-review-feature, sdd-run-qa, sdd-fix-bugs — with assets), `templates/agents/sdd-task-reviewer.md`, `templates/hooks-settings.json`, `templates/ci/docs-gate.yml`, `templates/scripts/specctl.mjs`.

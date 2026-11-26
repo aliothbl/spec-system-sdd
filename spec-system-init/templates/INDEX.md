@@ -1,5 +1,5 @@
-# INDEX.md — mapa de features
+# INDEX
 
-> GERADO — specctl index — NÃO EDITAR
+> GENERATED — specctl index — DO NOT EDIT
 
-_(sem features ainda — este stub é substituído por `node scripts/specctl.mjs index`)_
+_No features yet._

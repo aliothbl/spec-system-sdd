@@ -1,72 +1,76 @@
-# Contexto — orçamentos, compactação e pressão
+# Context — budgets, compaction and pressure
 
-> Referência sob demanda (R.16). Leia ao estourar um orçamento, antes de compactar, ou ao notar pressão de contexto. Não repita o núcleo: docs/RULES.md já chega via brief da sessão.
+> On-demand reference (R.16). Read when a budget overflows, before compacting, or when you notice context pressure. Do not repeat the core: docs/RULES.md is already loaded via the `@docs/RULES.md` import in CLAUDE.md.
 
-## Orçamentos por camada (lintados — R.16)
+## Per-layer budgets (linted — R.16)
 
-| Camada | Teto | Enforcement |
+| Layer | Cap | Enforcement |
 |---|---|---|
-| CLAUDE.md | 6.000 bytes | lint (erro) |
-| AGENTS.md | 6.200 bytes (carrega "Sem hooks?" que o CLAUDE dispensa) | lint (erro) |
-| docs/RULES.md (núcleo) | 5.000 bytes | lint (erro) |
-| digest.md (archive e discard) | 2.000 bytes | lint (erro) |
-| SNAPSHOT do journal | primeiras 60 linhas do arquivo | lint (erro) |
-| Cápsula por prompt | 800 bytes | por construção (specctl capsule) |
-| Retorno de subagente Nível 3 | ≤500 tokens | protocolo em docs/rules/retrieval.md |
-| docs/INDEX.md | **sem teto** | gerado (escala com features×SPECs); disciplina por-entrada (1 linha/SPEC) |
-| docs/features/<area>.md | **sem teto** | memória viva por área, nº ilimitado; `rollup` é manual/opcional |
+| CLAUDE.md | 6,000 bytes | lint (error) |
+| AGENTS.md | 6,200 bytes (carries "No hooks?" that CLAUDE.md doesn't need) | lint (error) |
+| docs/RULES.md (core) | 5,000 bytes | lint (error) |
+| digest.md (archive and discard) | 2,000 bytes | lint (error) |
+| journal SNAPSHOT | first 60 lines of the file | lint (error) |
+| Per-prompt capsule | 800 bytes | by construction (specctl capsule) |
+| L3 history summary | ≤500 tokens | protocol in docs/rules/retrieval.md |
+| docs/INDEX.md | **no cap** | generated (scales with features×SPECs); per-entry discipline (1 line/SPEC) |
+| docs/features/<area>.md | **no cap** | living memory per area, unlimited count; `rollup` is manual/optional |
 
-**Natureza dos tetos.** CLAUDE/AGENTS/RULES são **sempre-carregados 1×/sessão** (cacheados; re-lidos barato por turno) — o teto ali é orçamento de **ATENÇÃO, não de custo de token**: a camada precisa ficar de alto sinal para o TIER-0 ser respeitado (bloat → skim → bans perdem força). A **cápsula (800B)** é o ÚNICO por-prompt (multiplicado por turno) — o mais sensível. O **digest** é capado por definição (resumo de trabalho encerrado; sem teto vira cópia do archive). Regra: só entra nas camadas capadas o que merece a atenção do modelo em TODO turno; detalhe situacional vai para `rules/*` (gated).
+**Nature of the caps.** CLAUDE/AGENTS/RULES are **always loaded once per session** (cached; cheap to re-read per turn) — the cap there is an **ATTENTION budget, not a token-cost one**: the layer must stay high-signal for TIER-0 to be respected (bloat → skim → bans lose force). The **capsule (800 B)** is the ONLY per-prompt layer (multiplied per turn) — the most sensitive. The **digest** is capped by definition (summary of finished work; uncapped it becomes a copy of the archive). Rule: only what deserves the model's attention on EVERY turn goes into capped layers; situational detail goes to `rules/*` (read on demand).
 
-**Sem teto (de propósito).** `INDEX.md` é enumeração **gerada** — cresce com o sistema; capá-la seria erro de categoria (deadlock: gerado não se edita). `features/<area>.md` é **memória viva por área** e o sistema tem features/áreas ilimitadas — capar seria limitar quanto o produto pode acumular. Nesses dois, a disciplina não é byte: é **conteúdo** (INDEX: 1 linha por SPEC; feature: estado atual + decisões vivas em cima). Se o auto-load N1 de uma área pesar demais no seu julgamento, `specctl rollup <area>` desce blocos antigos (íntegros) para `<area>.history.md` — **opcional, seu critério, nada bloqueia**.
+**Uncapped (on purpose).** `INDEX.md` is a **generated** enumeration — it grows with the system; capping it would be a category error (deadlock: generated files are not edited). `features/<area>.md` is **living memory per area** with unlimited areas — capping would limit how much the product can accumulate. There the discipline is **content**, not bytes (INDEX: 1 line per SPEC; feature: current state + live decisions on top). If an area's L1 auto-load feels too heavy, `specctl rollup <area>` moves old blocks (intact) to `<area>.history.md` — **optional, your call, nothing blocks**.
 
-## Estouro de orçamento: mover, NUNCA deletar
+## Budget overflow: move, NEVER delete
 
-PROIBIDO deletar contexto rico. OBRIGATÓRIO movê-lo para a camada mais profunda:
+Deleting rich context is FORBIDDEN. MANDATORY: move it to the deeper layer:
 
-- `features/<area>.md` sem teto, mas se o auto-load N1 pesar (seu critério) → `rollup` opcional dos blocos mais antigos para `features/<area>.history.md` (blocos íntegros, com SPEC-id/DEC-id; o vivo retém estado atual + decisões ativas).
-- SPEC fechando → `digest.md` concentra o essencial; main+journal ficam íntegros em `docs/archive/` (recuperáveis via docs/rules/retrieval.md).
-- SNAPSHOT inchando → detalhe desce para o LOG (append-only); o SNAPSHOT guarda só o estado vigente.
+- `features/<area>.md` has no cap, but if the L1 auto-load weighs too much (your call) → optional `rollup` of the oldest blocks to `features/<area>.history.md` (intact blocks, with SPEC-id/DEC-id; the live file keeps current state + active decisions).
+- SPEC closing → `digest.md` holds the essentials; main+journal stay intact in `docs/archive/` (retrievable via docs/rules/retrieval.md).
+- SNAPSHOT bloating → detail goes down to the LOG (append-only); the SNAPSHOT keeps only the current state.
 
-## Unidade de persistência: checkpoint, não "fim de sessão"
+## Unit of persistence: checkpoint, not "end of session"
 
-Fim de sessão é indecidível sob auto-compact. Persista por marco: ao concluir fase, registrar `[MARCO]`, tomar decisão relevante — e SEMPRE antes de compactar — reescreva o SNAPSHOT e apende no LOG. O hook PreCompact lembra o flush; se o journal não reflete o estado real, escreva PRIMEIRO. Compactar sem flush = perder a sessão.
+End of session is undecidable under auto-compact. Persist per milestone: on finishing a phase, logging `[MILESTONE]`, making a relevant decision — and ALWAYS before compacting — rewrite the SNAPSHOT and append to the LOG.
 
-## Quando compactar (decisão por transição de fase)
+**The flush is YOUR job, before `/compact`.** The PreCompact hook runs, but its output does NOT reach the model in Claude Code — nothing forces or reminds the flush at compaction time. If the journal doesn't reflect the real state, write it FIRST, then compact. Auto-compact gives no warning: the `[context]` hint (below) is your signal to plan the flush at the next phase boundary. Compacting without a flush = losing the session.
 
-| Transição | Compactar? | Por quê |
+After compaction, the SessionStart `compact` hook re-injects `brief --compact` (bans + SNAPSHOT + NOW); CLAUDE.md and its `@docs/RULES.md` import are reloaded by Claude Code.
+
+## When to compact (decide at phase transitions)
+
+| Transition | Compact? | Why |
 |---|---|---|
-| Pesquisa → plano | SIM | pesquisa é volumosa; o plano é o destilado |
-| Plano → implementação | SIM | plano já está em main/journal; libere janela para código |
-| Implementação → testes | TALVEZ | mantenha se os testes referenciam código recém-escrito |
-| Depuração → próxima fase | SIM | traces de debug poluem o trabalho seguinte |
-| MEIO de implementação | NÃO | perder nomes, paths e estado parcial custa caro |
-| Após abordagem que falhou | SIM | registre `[tentativa]` no LOG e limpe o beco sem saída |
+| Research → plan | YES | research is bulky; the plan is the distillate |
+| Plan → implementation | YES | plan is already in main/journal; free the window for code |
+| Implementation → tests | MAYBE | keep if tests reference freshly written code |
+| Debugging → next phase | YES | debug traces pollute the next work |
+| MIDDLE of implementation | NO | losing names, paths and partial state is expensive |
+| After a failed approach | YES | log `[attempt]` in the LOG and clear the dead end |
 
-## O que sobrevive × o que se perde
+## What survives × what is lost
 
-| Sobrevive | Se perde |
+| Survives | Lost |
 |---|---|
-| Tudo em disco: journal, main, features, código, git | Raciocínio e análises não registrados |
-| Brief re-injetado (SessionStart roda pós-compact: bans + SNAPSHOT + NOW) | Conteúdo de arquivos já lidos |
-| CLAUDE.md / AGENTS.md | Respostas verbais do usuário não copiadas ao journal |
-| — | Histórico de tool calls |
+| Everything on disk: journal, main, features, code, git | Unrecorded reasoning and analysis |
+| Re-injected brief (SessionStart `compact`: bans + SNAPSHOT + NOW) | Contents of files already read |
+| CLAUDE.md (+ imported RULES.md) / AGENTS.md | User's verbal answers not copied to the journal |
+| — | Tool-call history |
 
-Consequência: resposta-chave do usuário, decisão e estado DEVEM estar no journal ANTES do /compact — depois é tarde.
+Consequence: key user answers, decisions and state MUST be in the journal BEFORE `/compact` — afterwards is too late.
 
-## /compact com sumário direcionado
+## /compact with a directed summary
 
-Nunca compacte "seco". Direcione o que preservar:
+Never compact "dry". Direct what to keep:
 
 ```
-/compact Foco: SPEC-20260702-1030-parser, fase 3 (validação). Manter: decisão da gramática PEG, paths src/parser/*. Descartar: exploração de regex da fase 1.
+/compact Focus: SPEC-20260702-1030-parser, phase 3 (validation). Keep: PEG grammar decision, paths src/parser/*. Drop: phase 1 regex exploration.
 ```
 
-## Sinais de pressão de contexto
+## Context-pressure signals
 
-- Re-perguntar o que o usuário já respondeu; reler arquivos já lidos.
-- Esquecer classificação R.9, workspace declarado ou bans TIER-0.
-- Respostas mais lentas, genéricas ou incoerentes.
-- **Sinal automático (v4.1.1):** o guard-write injeta `[contexto] ~Nk tokens (X% da janela)` quando o contexto REAL cruza o limiar (janela: env > `context_window` do manifesto > detecção pelo transcript; re-lembra a cada +60k). Ao vê-lo: siga até a fronteira de fase, faça o flush e compacte direcionado — nunca corte no meio.
+- Re-asking what the user already answered; re-reading files already read.
+- Forgetting R.9 classification, the declared workspace or TIER-0 bans.
+- Slower, generic or incoherent answers.
+- **Automatic signal:** guard-write injects `[context] ~Nk tokens (X% of window)` when REAL context crosses the threshold (default 160k; 250k on 1M windows; window: env > manifest `context_window` > transcript detection; repeats every +60k; env `COMPACT_CONTEXT_THRESHOLD`/`COMPACT_CONTEXT_INTERVAL` override, threshold `0` disables). On seeing it: continue to the phase boundary, flush, and compact with direction — never cut mid-implementation.
 
-Ação: flush do SNAPSHOT → `/compact` direcionado → o brief pós-compact re-ancora a sessão.
+Action: flush SNAPSHOT/journal → directed `/compact` → the post-compact brief re-anchors the session.

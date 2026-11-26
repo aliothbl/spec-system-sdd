@@ -1,23 +1,23 @@
-# ARCHITECTURE.md — mapa transversal região→feature
+# ARCHITECTURE.md — cross-cutting region→feature map
 
-> Orçamento-alvo: ≤4.800 bytes. Nível 0.5 de leitura: responde "este trecho do código pertence a qual feature?".
-> Cobre TODO o código, inclusive o que ainda não tem feature (marque `(sem feature)`).
-> Atualize quando uma SPEC mover fronteiras. Detalhe fino vive em `docs/features/<area>.md`.
+> Target budget: ≤4,800 bytes. Read level L0.5: answers "which feature does this part of the code belong to?".
+> Covers ALL the code, including what has no feature yet (mark it `(no feature)`).
+> Update when a SPEC moves boundaries. Fine detail lives in `docs/features/<area>.md`.
 
-## Mapa região → feature
+## Region → feature map
 
-| Região (path) | Feature (TAXONOMY) | Nota (1 linha) |
+| Region (path) | Feature (TAXONOMY) | Note (1 line) |
 |---|---|---|
 
-<!-- Exemplos — remova ao preencher:
-| src/server/auth/ | api/auth | JWT + refresh; middleware em src/server/middleware/ |
-| src/web/checkout/ | web/checkout | SPA; consome api/orders |
-| scripts/ | (sem feature) | utilitários de build — ainda sem dono |
+<!-- Examples — remove when filling in:
+| src/server/auth/ | api/auth | JWT + refresh; middleware in src/server/middleware/ |
+| src/web/checkout/ | web/checkout | SPA; consumes api/orders |
+| scripts/ | (no feature) | build utilities — no owner yet |
 -->
 
-## Fluxos transversais
+## Cross-cutting flows
 
-<!-- 1-3 linhas por fluxo que cruza regiões. Exemplos — remova ao preencher:
-- Compra: web/checkout → api/orders → api/payments (webhook assíncrono)
-- Deploy: infra/ci → build → registry → produção
+<!-- 1-3 lines per flow that crosses regions. Examples — remove when filling in:
+- Purchase: web/checkout → api/orders → api/payments (async webhook)
+- Deploy: infra/ci → build → registry → production
 -->
