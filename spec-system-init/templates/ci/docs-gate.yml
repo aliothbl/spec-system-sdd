@@ -1,18 +1,21 @@
 name: docs-gate
 
+# Protected branch: `main`. If the project uses another name (e.g. master, trunk),
+# change it in the main-gate `if:` below and in the branch protection rule.
+# No job pushes to the protected branch: generated indexes are committed in the PR
+# and checked by the "Index check" step (see docs/rules/ci.md).
+
 on:
   pull_request:
-  push:
-    branches: [main]
   schedule:
-    - cron: "0 6 * * 1" # semanal, segunda 06:00 UTC
+    - cron: "0 6 * * 1" # weekly, Monday 06:00 UTC
 
 permissions:
   contents: read
 
 jobs:
   gate-pr:
-    name: Gate de docs no PR
+    name: Docs gate on PR
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     env:
@@ -20,61 +23,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # audit --pr precisa do histórico completo
+          fetch-depth: 0 # audit --pr needs the full history
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - name: Lint estrito
+          node-version: 22
+      - name: Strict lint
         run: node scripts/specctl.mjs lint --strict
-      - name: Audit do PR (base do evento)
+      - name: PR audit (event base)
         run: node scripts/specctl.mjs audit --pr --base "$PR_BASE_SHA"
-      - name: Audit de dependências (programas)
+      - name: Dependency audit (programs)
         run: node scripts/specctl.mjs audit --deps
-      - name: Gate de main (docs/active/ vazio)
+      - name: Main gate (docs/active/ empty)
         if: github.event.pull_request.base.ref == 'main'
         run: node scripts/specctl.mjs audit --main-gate
-      - name: Index idempotente (regenera + diff)
+      - name: Index check (regenerate + compare, untracked included)
         run: |
           node scripts/specctl.mjs index
-          git diff --exit-code -- docs/INDEX.md docs/ARCHIVE-INDEX.md docs/PROGRAMS.md docs/DEFERRED.md
-
-  regen-index:
-    name: Regenerar índices em main
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - name: Regenerar INDEX/ARCHIVE-INDEX se docs mudou
-        env:
-          BEFORE_SHA: ${{ github.event.before }}
-        run: |
-          # range real do push; se a base não existe (branch nova/force), regenera sempre
-          if git rev-parse --verify --quiet "${BEFORE_SHA}^{commit}" >/dev/null; then
-            if git diff --quiet "$BEFORE_SHA" HEAD -- docs/; then
-              echo "docs/ sem mudanças — nada a regenerar"
-              exit 0
-            fi
+          changed="$(git status --porcelain -- docs/INDEX.md docs/ARCHIVE-INDEX.md docs/PROGRAMS.md docs/DEFERRED.md)"
+          if [ -n "$changed" ]; then
+            echo "Generated indexes are stale or missing — run: node scripts/specctl.mjs index, then commit:"
+            echo "$changed"
+            git --no-pager diff -- docs/INDEX.md docs/ARCHIVE-INDEX.md docs/PROGRAMS.md docs/DEFERRED.md
+            exit 1
           fi
-          node scripts/specctl.mjs index
-          if git diff --quiet -- docs/INDEX.md docs/ARCHIVE-INDEX.md docs/PROGRAMS.md docs/DEFERRED.md; then
-            echo "índices já atualizados"
-            exit 0
-          fi
-          git config user.name "docs-gate[bot]"
-          git config user.email "docs-gate[bot]@users.noreply.github.com"
-          git add docs/INDEX.md docs/ARCHIVE-INDEX.md docs/PROGRAMS.md docs/DEFERRED.md
-          git commit -m "chore: regenera INDEX/ARCHIVE-INDEX/PROGRAMS/DEFERRED [skip ci]"
-          git push
 
-  audit-semanal:
-    name: Audit semanal
+  weekly-audit:
+    name: Weekly audit
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
@@ -83,6 +57,6 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - name: Audit completo
+          node-version: 22
+      - name: Full audit
         run: node scripts/specctl.mjs audit

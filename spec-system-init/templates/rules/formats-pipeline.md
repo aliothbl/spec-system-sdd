@@ -1,188 +1,197 @@
-> PARE. Este arquivo só se aplica a Porte G com pipeline. Cobre: templates de prd/techspec/tasks/NN_task/qa/review/bugfix. Fora disso, formats.md core responde.
+> STOP. This file applies only to size L with a pipeline. Covers: prd/techspec/tasks/NN_task/qa/review/bugfix templates. Otherwise the core formats.md answers.
 
-# Templates do pipeline (rules/formats-pipeline.md)
+# Pipeline templates (rules/formats-pipeline.md)
 
-Artefatos opcionais de porte G, na RAIZ da pasta da SPEC (ou no workspace declarado — rules/interop.md), declarados por ponteiro no `main.md` logo após o cabeçalho, com timestamp de geração (ponteiro sem arquivo = warn):
+Optional size L artifacts, at the ROOT of the SPEC folder (or of the declared workspace — rules/interop.md), declared by pointer in `main.md` right after the header fields. Pointer = `**<Key>:** <path> (YYYY-MM-DD HH:MM)`; the path (before ` (`) resolves against the SPEC folder or the repo root; pointer with no file = lint warning. Keys the CLI checks: `PRD`, `TechSpec`, `Tasks`, `QA`, `Review`, `Bugfix`, `Bugs`, `Evidence`.
 
 ```markdown
 **PRD:** prd.md (YYYY-MM-DD HH:MM)
 **TechSpec:** techspec.md (YYYY-MM-DD HH:MM)
 **Tasks:** tasks.md (YYYY-MM-DD HH:MM)
+**QA:** qa-report.md (YYYY-MM-DD HH:MM)
+**Review:** review-report.md (YYYY-MM-DD HH:MM)
+**Bugfix:** bugfix-report.md (YYYY-MM-DD HH:MM)
+**Bugs:** bugs.md (YYYY-MM-DD HH:MM)
+**Evidence:** evidence/ (YYYY-MM-DD HH:MM)
 ```
 
-Mesmos nomes/moldes do harness prd (`tasks/prd-<slug>/`) — projetos alternam entre standalone e harness sem retrabalho.
+Same names/shapes as the prd harness (`tasks/prd-<slug>/`) — projects switch between standalone and harness without rework.
 
-**Convenção RF-N (global):** requisitos funcionais numerados `RF-1..RF-n` com numeração GLOBAL e sequencial no `prd.md` inteiro (nunca reinicia por seção). Todo RF coberto por ≥1 critério do main.md via `(cobre RF-n)` — lint valida quando `prd.md` existe. **Altitude de RF:** o RF nomeia a capacidade e o serviço (O QUÊ), nunca o mecanismo (COMO — transporte, endpoint, header, lib); mecanismo pertence à techspec (ex.: "Slack (OUTPUT)", não "Slack incoming-webhook") — o RF fica estável quando a decisão de implementação evolui.
+**FR-N convention (global):** functional requirements numbered `FR-1..FR-n`, GLOBAL and sequential across the whole `prd.md` (never restarts per section; `RF-N` is still accepted). Every FR is covered by ≥1 main.md criterion via `(covers FR-n)` — lint validates when `prd.md` exists. **FR altitude:** the FR names the capability and the service (WHAT), never the mechanism (HOW — transport, endpoint, header, lib); mechanism belongs in the techspec (e.g. "Slack (OUTPUT)", not "Slack incoming-webhook") — the FR stays stable when the implementation decision evolves.
 
-## Procedimentos mínimos por artefato
+## Minimum procedure per artifact
 
-(Destilados do harness; quando o rigor máximo importar, use o harness via interop.)
+(Distilled from the harness; when maximum rigor matters, use the harness via interop.)
 
-- **PRD:** ler main.md+journal ANTES e perguntar SÓ o que ainda não foi respondido (dedupe); clarificar com o usuário antes de redigir; PRD = O QUÊ/POR QUÊ, <2.000 palavras, ZERO solução de design; RF na altitude de capacidade (nunca mecanismo — ver Convenção RF-N acima); refinar critérios do main.md com `(cobre RF-n)` — mudança de contrato = validação humana.
-- **TechSpec:** pesquisar ANTES (padrões do próprio código + docs das libs); techspec = COMO, NÃO repete o PRD; decisões com efeito além da SPEC → `[decisão]` no journal (sobem a features no fechamento).
-- **Tasks:** propor a lista de ALTO NÍVEL e obter aprovação ANTES de gerar os `NN_task.md`; máx 15 tasks; cada task = entregável funcional incremental COM a própria suíte de testes.
-- **QA/evidência:** evidência bruta em `tmp/`; a citada → `evidence/` com nome determinístico; QA aprovado marca critérios cobertos no main.md com evidência (R.6.1); qa-report REJECTED ou bug High aberto bloqueia archive quando esses artefatos existem.
+- **PRD:** read main.md + journal FIRST and ask ONLY what is still unanswered (dedupe); clarify with the user before drafting; PRD = WHAT/WHY, <2,000 words, ZERO design solution; FRs at capability altitude (never mechanism — see FR-N convention); refine main.md criteria with `(covers FR-n)` — contract change = human validation.
+- **TechSpec:** research FIRST (the codebase's own patterns + lib docs); techspec = HOW, does NOT repeat the PRD; decisions with effect beyond the SPEC → `[decision]` in the journal (promoted to features at close).
+- **Tasks:** propose the HIGH-LEVEL list and get approval BEFORE generating the `NN_task.md` files; max 15 tasks; each task = incremental functional deliverable WITH its own test suite.
+- **QA/evidence:** raw evidence in `tmp/`; cited evidence → `evidence/` with a deterministic name; passed QA stamps the covered main.md criteria via `specctl check`/`verify` with evidence (R.6.1).
+- **At close (human decision, no CLI gate):** a `qa-report.md` with verdict `REJECTED`, a feature review `REJECTED`, or a `bugs.md` entry with severity `Critical`/`High` and status `Open`/`Reopened` does NOT block archive in the CLI. `/spec close` MUST surface them to the user, who decides (fix now / new SPEC / accept the gap with a quote — R.6.2).
 
-## 1. Template `prd.md`
+## 1. `prd.md` template
 
 ```markdown
-# PRD — [Funcionalidade]
+# PRD — [Feature]
 
-**Origem:** local | importado (time X, YYYY-MM-DD, vN)
+**Origin:** local | imported (team X, YYYY-MM-DD, vN)
 
-## Visão Geral
-[Qual problema resolve, para quem, por que é valioso.]
+## Overview
+[What problem it solves, for whom, why it is valuable.]
 
-## Objetivos
-[Objetivos específicos e mensuráveis: como é o sucesso, métricas principais, objetivos de negócio.]
+## Goals
+[Specific, measurable goals: what success looks like, key metrics, business goals.]
 
-## Histórias de Usuário
-[Como [tipo de usuário], quero [ação] para que [benefício]. Personas primárias e secundárias; fluxos principais e casos extremos.]
+## User Stories
+[As a [user type], I want [action] so that [benefit]. Primary and secondary personas; main flows and edge cases.]
 
-## Funcionalidades Principais
-[Para cada funcionalidade: o que faz, por que importa, como funciona em alto nível.
-Requisitos funcionais numerados RF-1..RF-n — numeração GLOBAL do documento.]
+## Core Features
+[For each feature: what it does, why it matters, how it works at a high level.
+Functional requirements numbered FR-1..FR-n — GLOBAL numbering across the document.]
 
-## Experiência do Usuário
-[Personas e necessidades; fluxos e interações principais; UI/UX; acessibilidade.]
+## User Experience
+[Personas and needs; main flows and interactions; UI/UX; accessibility.]
 
-## Restrições Técnicas de Alto Nível
-[SÓ restrições — soluções de design pertencem à techspec: integrações externas, conformidade/regulatório/segurança, metas de performance/escalabilidade, sensibilidade de dados/privacidade, tecnologia/protocolo não negociáveis.]
+## High-Level Technical Constraints
+[ONLY constraints — design solutions belong in the techspec: external integrations, compliance/regulatory/security, performance/scalability targets, data sensitivity/privacy, non-negotiable technology/protocol.]
 
-## Fora de Escopo
-[O que esta funcionalidade NÃO incluirá: exclusões explícitas, considerações futuras, limites.]
+## Out of Scope
+[What this feature will NOT include: explicit exclusions, future considerations, limits.]
 ```
 
-## 2. Template `techspec.md`
+## 2. `techspec.md` template
 
 ````markdown
-# TechSpec — [Funcionalidade]
+# TechSpec — [Feature]
 
-## Resumo Executivo
-[Visão técnica da solução: decisões arquiteturais principais + estratégia, 1-2 parágrafos.]
+## Executive Summary
+[Technical view of the solution: main architectural decisions + strategy, 1-2 paragraphs.]
 
-## Arquitetura do Sistema
+## System Architecture
 
-### Visão Geral dos Componentes
-[Componentes e responsabilidades — listar CADA componente novo ou modificado; relacionamentos; fluxo de dados.]
+### Component Overview
+[Components and responsibilities — list EVERY new or modified component; relationships; data flow.]
 
-## Design de Implementação
+## Implementation Design
 
-### Interfaces Principais
-[Interfaces de serviço principais, ≤20 linhas por exemplo:]
+### Main Interfaces
+[Main service interfaces, ≤20 lines per example:]
 ```
-type NomeServico interface {
-    NomeMetodo(ctx, entrada) (saida, erro)
+type ServiceName interface {
+    MethodName(ctx, input) (output, error)
 }
 ```
 
-### Modelos de Dados
-[Entidades de domínio; tipos de requisição/resposta; esquemas de banco, se aplicável.]
+### Data Models
+[Domain entities; request/response types; database schemas, if applicable.]
 
-### Endpoints de API
-[Método e caminho (ex.: `POST /api/v0/recurso`); descrição; formatos de req/resp.]
+### API Endpoints
+[Method and path (e.g. `POST /api/v0/resource`); description; req/resp formats.]
 
-## Pontos de Integração
-[Só se houver integração externa: serviços/APIs, autenticação, tratamento de erros.]
+## Integration Points
+[Only if there is external integration: services/APIs, authentication, error handling.]
 
-## Abordagem de Testes
+## Testing Approach
 
-### Testes de Unidade
-[Componentes a testar; mocks (apenas serviços externos); cenários críticos.]
+### Unit Tests
+[Components to test; mocks (external services only); critical scenarios.]
 
-### Testes de Integração
-[Se necessário: componentes testados juntos; dados de teste.]
+### Integration Tests
+[If needed: components tested together; test data.]
 
-### Testes de E2E
-[Se necessário: frontend junto com backend, usando Playwright.]
+### E2E Tests
+[If needed: frontend together with backend, using Playwright.]
 
-## Sequenciamento de Desenvolvimento
+## Development Sequencing
 
-### Ordem de Construção
-[1. Primeiro componente (por quê); 2. dependências; 3. subsequentes; 4. integração e testes.]
+### Build Order
+[1. First component (why); 2. dependencies; 3. subsequent; 4. integration and tests.]
 
-### Dependências Técnicas
-[Bloqueantes: infraestrutura requerida, serviços externos.]
+### Technical Dependencies
+[Blockers: required infrastructure, external services.]
 
-## Monitoramento e Observabilidade
-[Métricas a expor, logs principais e níveis, integração com dashboards existentes.]
+## Monitoring and Observability
+[Metrics to expose, main logs and levels, integration with existing dashboards.]
 
-## Considerações Técnicas
+## Technical Considerations
 
-### Decisões Principais
-[Escolha + justificativa; trade-offs; alternativas rejeitadas e por quê.]
+### Key Decisions
+[Choice + rationale; trade-offs; rejected alternatives and why.]
 
-### Riscos Conhecidos
-[Desafios potenciais; mitigação; áreas precisando pesquisa.]
+### Known Risks
+[Potential challenges; mitigation; areas needing research.]
 
-### Conformidade com Skills Padrões
-[Se o projeto tem .claude/skills/, liste as aplicáveis a esta techspec.]
+### Standard Skills Compliance
+[If the project has .claude/skills/, list the ones that apply to this techspec.]
 
-### Arquivos relevantes e dependentes
-[Arquivos relevantes e dependentes.]
+### Relevant and Dependent Files
+[Relevant and dependent files.]
 ````
 
-## 3. Template `tasks.md`
+## 3. `tasks.md` template
 
 ```markdown
-# Resumo de Tarefas de Implementação de [Funcionalidade]
+# Implementation Task Summary for [Feature]
 
-## Tarefas
+## Tasks
 
-- [ ] 1.0 Título da Tarefa
-- [ ] 2.0 Título da Tarefa
+- [ ] 1.0 Task Title
+- [ ] 2.0 Task Title
 ```
 
-## 4. Template `NN_task.md`
+## 4. `NN_task.md` template
+
+File name: two-digit zero-padded task number — `01_task.md`, `02_task.md`, …; its review is `01_task_review.md`.
 
 ```markdown
-# Tarefa X.0: [Título da Tarefa]
+# Task X.0: [Task Title]
 
-<critical>Ler prd.md e techspec.md desta pasta (raiz da SPEC); sem essa leitura a tarefa é invalidada</critical>
+<critical>Read prd.md and techspec.md in this folder (SPEC root); without that reading the task is invalid</critical>
 
-## Visão Geral
-[Breve descrição da tarefa.]
+## Overview
+[Short task description.]
 
 <skills>
-### Conformidade com Skills Padrões
-[Se o projeto tem .claude/skills/, liste as aplicáveis a esta tarefa.]
+### Standard Skills Compliance
+[If the project has .claude/skills/, list the ones that apply to this task.]
 </skills>
 
 <requirements>
-[Requisitos obrigatórios — referencie os RF-n cobertos.]
+[Mandatory requirements — reference the FR-n covered.]
 </requirements>
 
-## Subtarefas
-- [ ] X.1 [Descrição da subtarefa]
-- [ ] X.2 [Descrição da subtarefa]
+## Subtasks
+- [ ] X.1 [Subtask description]
+- [ ] X.2 [Subtask description]
 
-## Detalhes de Implementação
-[Referencie techspec.md — não repita a implementação.]
+## Implementation Details
+[Reference techspec.md — do not repeat the implementation.]
 
-## Critérios de Sucesso
-- [Resultados mensuráveis; requisitos de qualidade.]
+## Success Criteria
+- [Measurable results; quality requirements.]
 
-## Testes da Tarefa
-- [ ] Testes de unidade
-- [ ] Testes de integração
-- [ ] Testes E2E (se aplicável)
+## Task Tests
+- [ ] Unit tests
+- [ ] Integration tests
+- [ ] E2E tests (if applicable)
 
-<critical>SEMPRE CRIE E EXECUTE OS TESTES DA TAREFA ANTES DE CONSIDERÁ-LA FINALIZADA</critical>
+<critical>ALWAYS CREATE AND RUN THE TASK TESTS BEFORE CONSIDERING IT DONE</critical>
 
-## Arquivos relevantes
-- [Arquivos relevantes desta tarefa.]
+## Relevant Files
+- [Files relevant to this task.]
 ```
 
-**Checkboxes de task no formato R.6:** ao concluir, TODO checkbox de `tasks.md` e `NN_task.md` (tarefas, subtarefas, testes) é marcado como `- [x] X.1 Descrição (YYYY-MM-DD HH:MM, commit `hash`)`. Checkbox `[x]` sem timestamp = ERRO no lint. Altitudes de progresso sem sobreposição: task fecha em `tasks.md`, fase fecha no SNAPSHOT, critério fecha no `main.md`.
+**Task checkboxes in R.6 format:** on completion, EVERY checkbox in `tasks.md` and `NN_task.md` (tasks, subtasks, tests) is ticked as `- [x] X.1 Description (YYYY-MM-DD HH:MM, commit `hash`)`. `[x]` without timestamp = lint ERROR. Non-overlapping progress altitudes: a task closes in `tasks.md`, a phase in the SNAPSHOT, a criterion in `main.md` (only via `check`/`verify`).
 
 ## 5. QA / review / bugfix
 
-| Artefato | O quê |
+| Artifact | What |
 |---|---|
-| `bugs.md` | bugs de QA: severidade (Alta/Média/Baixa), evidência, status da correção — contrato append-only em rules/interop.md |
-| `qa-report.md` · `review-report.md` · `bugfix-report.md` | relatórios de pipeline (gerados pelas skills executar-qa/review/bugfix) |
-| `evidence/` | evidência PERSISTENTE citada em relatório/critério (nome determinístico) |
-| `intake/` | artefatos importados ORIGINAIS, verbatim (nunca reescritos; re-importações versionadas: `intake/prd-v2.md`) |
-| `tmp/` | temporários — gitignored (R.12); evidência bruta nasce aqui |
+| `bugs.md` | QA bugs: severity (`Critical`/`High`/`Medium`/`Low`), evidence, status (`Open`/`Fixed`/`Verified`/`Reopened`/`Not reproducible`) — append-only contract in rules/interop.md |
+| `qa-report.md` · `review-report.md` · `bugfix-report.md` | pipeline reports (from skills `sdd-run-qa` / `sdd-review-feature` / `sdd-fix-bugs`). QA per FR: `PASSED`/`FAILED`, report verdict `APPROVED`/`REJECTED`; feature review `APPROVED`/`APPROVED WITH OBSERVATIONS`/`REJECTED` |
+| `NN_task_review.md` | per-task review (`sdd-review-task`): `APPROVED`/`APPROVED WITH OBSERVATIONS`/`CHANGES REQUESTED` |
+| `evidence/` | PERSISTENT evidence cited in a report/criterion (deterministic name) |
+| `intake/` | ORIGINAL imported artifacts, verbatim (never rewritten; re-imports versioned: `intake/prd-v2.md`) |
+| `tmp/` | temporary — gitignored (R.12); raw evidence starts here |
 
-Todo artefato de pipeline DEVE ter contrapartida no journal (`[nota]/[decisão]/[descoberta]` — R.6.1); `specctl audit` avisa artefato sem contrapartida.
+Every pipeline artifact MUST have a journal counterpart (`[note]/[decision]/[discovery]` via `specctl log` — R.6.1); `specctl audit` warns about an artifact with no counterpart.

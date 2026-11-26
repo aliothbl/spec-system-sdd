@@ -1,52 +1,63 @@
-# Retrieval — histórico via subagente (Nível 3)
+# Retrieval — history access (Level 3)
 
-> **PARE.** Este arquivo só se aplica ao investigar SPECs arquivadas (archive/discard, journal de SPEC não-ativa, `*.history.md`). Cobre: leitura via subagente e o protocolo DISPATCH→EVALUATE→REFINE→LOOP. Fora disso, o brief/--help respondem.
+> **STOP.** This file only applies when investigating non-active SPECs (archive/discard, a non-active SPEC's journal, `*.history.md`). Covers: what the guard allows, the canonical route, and the DISPATCH→EVALUATE→REFINE→LOOP protocol. Otherwise, the brief/`--help` answer.
 
-> Referência sob demanda (R.8). Leia quando a tarefa exigir histórico: docs/archive/**, docs/discard/**, journal de SPEC não-ativa ou features/*.history.md.
+> On-demand reference (R.8). Read when the task needs history: docs/archive/**, docs/discard/**, a non-active SPEC's journal or features/*.history.md.
 
-## Read direto × subagente
+## What the guard-read hook allows
 
-| Alvo | Como ler |
-|---|---|
-| main.md + SNAPSHOT da SPEC ativa; features do escopo; INDEX; ARCHITECTURE | Read direto (barato, livre) |
-| docs/ARCHIVE-INDEX.md | Read direto (1 linha por SPEC) |
-| docs/archive/**, docs/discard/**, journal de SPEC ≠ ativa, *.history.md | SUBAGENTE isolado — o hook guard-read NEGA Read direto no contexto principal |
+PreToolUse `guard-read` covers Read, Grep and Glob — **including tool calls made by subagents** (hooks fire for them too). A subagent gets NO extra access; delegating does not bypass the guard.
 
-Exceção auditada: um arquivo `.allow-read` na pasta da SPEC ativa libera Reads específicos. Use raramente e registre `[nota]` no journal com o motivo.
+| Target | Read | Grep/Glob with `path` there |
+|---|---|---|
+| `main.md` / `digest.md` of ANY SPEC (archive, discard, future, active) | allowed | as the folder rows below |
+| Other files in `docs/archive/SPEC-*/` (journal, prd, evidence, …) | `[guard-read] BLOCKED` unless allowlisted | BLOCKED unless allowlisted; `path: docs/archive` itself always BLOCKED |
+| `journal.md`/`state.md`/`memory.md` of a SPEC not in `active/` | BLOCKED unless allowlisted | BLOCKED inside that SPEC folder unless allowlisted |
+| Other files of a `future/`/`discard/` SPEC | allowed | BLOCKED inside that SPEC folder unless allowlisted |
+| Active SPEC files, features (incl. `*.history.md`), INDEX, ARCHIVE-INDEX, ARCHITECTURE | allowed | allowed |
+| `scripts/specctl.mjs` | BLOCKED (use `--help` / `close <id> --dry`) | — |
 
-Regra de ouro: o custo de contexto escala com o escopo da TAREFA, nunca com a idade do projeto. Histórico só entra na janela principal como retorno destilado.
+- Grep/Glob **without** `path` (whole repo) is not blocked; reading the files it lists still goes through the guard.
+- **Allowlist (audited exception):** add a line with the SPEC id (or id prefix) to `docs/active/<active-SPEC>/.allow-read`. It unlocks every file of that SPEC for Read/Grep/Glob. Needs an active SPEC. Use rarely and log a `[note]` in the journal with the reason.
+- Manifest `policy: strict`: Reads outside the free roots (RULES, rules/, indexes, TAXONOMY, ARCHITECTURE, CONSTITUTION, claims, programs, manifest) and the active SPEC ask the user (R.10); `main.md`/`digest.md` stay free.
+- **Bash `cat`/`grep`/`head` on these paths is not intercepted by any hook — it is still FORBIDDEN by R.8.** The rule binds even where the tool doesn't enforce it.
 
-## Rota canônica (do barato ao caro)
+Golden rule: context cost scales with the TASK's scope, never with the project's age. History enters the main window only as a distilled summary.
 
-1. `docs/ARCHIVE-INDEX.md` — filtre por keyword/feature (id, status, features, keywords, resumo em 1 linha).
-2. `digest.md` das candidatas (≤2.000 bytes cada) — responde a maioria das perguntas de histórico.
-3. `journal.md`/`main.md` da SPEC — SÓ se o digest não bastar, e SÓ dentro do subagente.
+## Canonical route (cheap to expensive)
 
-## Protocolo do subagente: DISPATCH → EVALUATE → REFINE → LOOP (máx 3 ciclos)
+1. `docs/ARCHIVE-INDEX.md` — filter by keyword/feature (id, status, features, keywords, 1-line summary).
+2. `digest.md` of the candidates (≤2,000 bytes each) — answers most history questions.
+3. `main.md` of the SPEC (free) — the contract and its marked criteria.
+4. `journal.md` / other files — ONLY if 1–3 don't suffice, via `.allow-read` + `[note]`.
 
-1. **DISPATCH** — busca ampla: keywords da tarefa no ARCHIVE-INDEX + features relacionadas. Não superespecifique a primeira consulta.
-2. **EVALUATE** — pontue cada fonte de 0 a 1: ≥0,8 responde diretamente; 0,5–0,7 decisão/padrão relacionado; <0,2 exclua com confiança (não volta a ser relevante). Registre LACUNAS explícitas ("achei O QUE mudou; falta o PORQUÊ").
-3. **REFINE** — incorpore o vocabulário real do projeto revelado no ciclo 1 (ex.: o código diz "throttle", não "rate limit"); exclua o irrelevante; mire as lacunas.
-4. **LOOP** — repita com a consulta refinada. PARE quando houver ≥3 fontes com score ≥0,7 e nenhuma lacuna crítica: **3 arquivos certos > 10 medianos**. Esgotados os 3 ciclos, devolva o melhor conjunto + lacunas restantes declaradas.
+For many candidates, a subagent can run steps 1–3 and return only the distilled summary (keeps the main window clean) — under the same guard, with the same allowlist.
 
-## Formato do retorno (≤500 tokens — obrigatório)
+## Protocol: DISPATCH → EVALUATE → REFINE → LOOP (max 3 cycles)
 
-- **Resposta:** 1–3 frases diretas à pergunta.
-- **Fontes:** SPEC-id/arquivo por afirmação.
-- **Decisões/gotchas:** DEC-ids e gotchas pertinentes, 1 linha cada.
-- **Lacunas:** o que NÃO foi encontrado — declare, não invente.
+1. **DISPATCH** — broad search: task keywords in ARCHIVE-INDEX + related features. Don't over-specify the first query.
+2. **EVALUATE** — score each source 0 to 1: ≥0.8 answers directly; 0.5–0.7 related decision/pattern; <0.2 exclude confidently (won't become relevant). Record explicit GAPS ("found WHAT changed; missing WHY").
+3. **REFINE** — adopt the project's real vocabulary revealed in cycle 1 (e.g. the code says "throttle", not "rate limit"); drop the irrelevant; target the gaps.
+4. **LOOP** — repeat with the refined query. STOP when there are ≥3 sources scoring ≥0.7 and no critical gap: **3 right files > 10 mediocre ones**. After 3 cycles, return the best set + remaining gaps stated.
 
-PROIBIDO colar conteúdo bruto de journal/main no retorno.
+## Summary format (≤500 tokens — mandatory)
 
-## Exemplo mínimo
+- **Answer:** 1–3 sentences straight to the question.
+- **Sources:** SPEC-id/file per claim.
+- **Decisions/gotchas:** relevant DEC-ids and gotchas, 1 line each.
+- **Gaps:** what was NOT found — state it, don't invent.
+
+FORBIDDEN to paste raw journal/main content into the summary.
+
+## Minimal example
 
 ```
-Pergunta: por que abandonamos cache em Redis?
-Ciclo 1 — DISPATCH: ARCHIVE-INDEX, grep "redis|cache" → SPEC-20250412-0910-cache-redis (discarded, feature infra/fila).
-Ciclo 2 — digest: "latência de rede anulou o ganho; ver DEC-20250413-1120-sqs-memoria". Lacuna: números do benchmark → journal, entrada [tentativa] de 2025-04-13.
-Retorno (5 linhas): resposta + DEC-id + ponteiro ao journal + lacuna "benchmark de escrita nunca foi medido".
+Question: why did we drop the Redis cache?
+Cycle 1 — DISPATCH: ARCHIVE-INDEX, keywords "redis|cache" → SPEC-20250412-0910-cache-redis (discarded, feature infra/queue).
+Cycle 2 — digest: "network latency cancelled the gain; see DEC-20250413-1120-sqs-memory". Gap: benchmark numbers → journal, [attempt] entry of 2025-04-13 (needs .allow-read).
+Summary (5 lines): answer + DEC-id + pointer to the journal + gap "write benchmark was never measured".
 ```
 
-## Quando NEM subagente
+## When not to bother
 
-Pergunta sobre a SPEC ativa ou o estado vigente de uma feature mora nos Níveis 0–2 (SNAPSHOT, main.md, features/<area>.md): leia direto. Subagente é para arqueologia, não para o presente.
+Questions about the active SPEC or a feature's current state live in Levels 0–2 (SNAPSHOT, main.md, features/<area>.md): read directly. L3 is for archaeology, not the present.

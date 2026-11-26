@@ -1,100 +1,91 @@
-# Equipe — claims, features compartilhadas, locks, worktrees, onboarding, multi-repo
+# Team — claims, shared features, locks, worktrees, onboarding, multi-repo
 
-> **PARE.** Este arquivo só se aplica com **`"team": "multi"` no manifesto** (`docs/.spec-system.json`) ou em cenário multi-repo. O regime é DECLARADO, nunca inferido: `solo` (default) dispensa esta rule; `multi` a torna obrigatória — o `activate` imprime a coreografia de publicação do claim e o `audit` avisa claim não-publicado. Virar multi = editar 1 linha do manifesto.
+> **STOP.** This file applies only with **`"team": "multi"` in the manifest** (`docs/.spec-system.json`) or in a multi-repo setting. The regime is DECLARED, never inferred: `solo` (default) skips this rule; `multi` makes it mandatory — `activate` prints the claim publishing choreography and `audit` warns about an unpublished claim. Going multi = editing 1 manifest line.
 
-> Leia quando: `team: multi` no manifesto, ao ativar SPEC (claims), ao consolidar features, no onboarding de alguém, ou ao coordenar múltiplos repos.
+> Read when: `team: multi` in the manifest, when activating a SPEC (claims), when consolidating features, when onboarding someone, or when coordinating multiple repos.
 
-## Claims — trabalho em voo visível em main (R.11)
+## Claims — in-flight work visible in main (R.11)
 
-`docs/active/` é vazio em main (R.2); quem anuncia trabalho em voo é `docs/claims/SPEC-<id>.md` — 1 arquivo por SPEC = zero conflito de merge. Formato (~10 linhas):
+`docs/active/` is empty in main (R.2); in-flight work is announced by `docs/claims/SPEC-<id>.md` — 1 file per SPEC = zero merge conflicts. Format (written by specctl):
 
 ```
-**SPEC:** SPEC-20260702-1500-checkout-descontos
-**Título:** Descontos no checkout
+# Claim — SPEC-20260702-1500-checkout-discounts
+
+**SPEC:** SPEC-20260702-1500-checkout-discounts
+**Title:** Checkout discounts
 **Owner:** @maria
-**Branch:** feature/checkout-descontos
+**Branch:** feature/checkout-discounts
+**Base:** main
 **Features:** checkout, billing
-**Ativada em:** 2026-07-02 15:00
+**Activated at:** 2026-07-02 15:00
 ```
 
-- **Ciclo:** `specctl activate` cria o claim; `pause`/`archive`/`discard` removem; `resume` recria. Invariante: claim existe ⇔ SPEC ativa.
-- **Publicação (team: multi):** o claim nasce na branch e precisa correr NA FRENTE do trabalho — publique na base via **PR trivial** (diff só em `docs/claims/` — merge imediato/auto-merge quando a política permitir). O `specctl activate` imprime os comandos exatos; a coreografia é:
+- **Cycle:** `specctl activate` creates the claim; `pause`/`close`/`discard` remove it; `resume` recreates it. Invariant: claim exists ⇔ SPEC active. `**Base:**` = origin branch (used by the close finishing menu).
+- **Publishing (team: multi):** the claim is born on the branch and must run AHEAD of the work — publish it to the base via a **trivial PR** (diff only in `docs/claims/` — immediate merge/auto-merge when policy allows). `specctl activate` prints the exact commands; the choreography is:
   ```
   git checkout -b claim/SPEC-<id> <base>
-  git checkout <branch-de-feature> -- docs/claims/SPEC-<id>.md
+  git checkout <feature-branch> -- docs/claims/SPEC-<id>.md
   git commit -m "docs: claim SPEC-<id> (R.11)" && git push -u origin claim/SPEC-<id>
-  # PR para <base> (auto-merge) e volte: git checkout <branch-de-feature>
+  # PR to <base> (auto-merge), then go back: git checkout <feature-branch>
   ```
-  O `audit` avisa claim local ainda não presente na base. Fallback sem automação: draft PR da branch na ativação (visibilidade via PRs abertas). Em `team: solo`, nada disso se aplica — o claim vai à base junto do merge de trabalho.
-- **Antes de criar SPEC:** consultar `docs/claims/` — o brief da sessão já lista claims que colidem com as features tocadas. Colisão → alertar o usuário e coordenar com o Owner do claim ANTES de criar SPEC duplicada ("SPEC-x de @maria já toca `auth` — coordenar ou prosseguir?").
-- **Higiene (audit):** claim sem SPEC ativa correspondente = órfão (warn); ativação sem claim = warn.
+  `audit` warns about a local claim not yet on the base. Fallback without automation: a draft PR of the branch at activation (visibility via open PRs). In `team: solo` none of this applies — the claim reaches the base with the work merge.
+- **Before creating a SPEC:** check `docs/claims/` — the session brief already lists claims colliding with the touched features. Collision → warn the user and coordinate with the claim Owner BEFORE creating a duplicate SPEC ("SPEC-x by @maria already touches `auth` — coordinate or proceed?").
+- **Hygiene (audit):** claim with no matching active SPEC = orphan (warning); activation without claim = warning.
 
-## features/<area>.md em equipe
+## features/<area>.md in a team
 
-- **Line-oriented:** nas seções compartilhadas (Specs desta feature, Decisões, Alternativas rejeitadas, Gotchas), cada entrada é UMA linha iniciada por SPEC-id ou DEC-id. O timestamp do id ordena; conflito de merge vira inserção adjacente trivial. Nunca reordenar linhas existentes.
-- **Decisões:** `DEC-YYYYMMDD-HHMM-slug` com status `ativa | obsoleta → DEC-x | substituída por SPEC-y`. Obsoletar = mudar o campo status da linha; nunca reescrever nem deletar.
-- **Gotchas:** sufixo de recorrência `(citado por: SPEC-a, SPEC-b)`. SPEC que tropeça no mesmo gotcha ADICIONA seu id; ≥3 SPECs → candidato a promoção no fechamento (ver `docs/rules/lifecycle.md`).
-- **Estado atual (prosa):** nunca editar concorrentemente. SPEC que arquiva APENDA `### Delta de estado (SPEC-<id>, data)` ao fim da seção. A consolidação dos deltas na prosa canônica é **single-writer**: sessão dedicada com dono (CODEOWNERS por feature é o candidato natural); consolide quando 3-5 deltas acumularem — é tarefa legítima de SPEC de manutenção.
-- **Tamanho:** feature viva não tem teto (nº de features ilimitado, não lintado). Se o auto-load N1 pesar demais, `rollup` opcional move o conteúdo mais antigo para `<area>.history.md` — mover, nunca deletar (R.5).
+- **Line-oriented:** in shared sections (Specs for this feature, Decisions, Rejected alternatives, Gotchas), each entry is ONE line starting with a SPEC-id or DEC-id. The id timestamp orders; a merge conflict becomes a trivial adjacent insertion. Never reorder existing lines.
+- **Decisions:** `DEC-YYYYMMDD-HHMM-slug` with status `active | obsolete → DEC-x | superseded by SPEC-y`. Obsoleting = changing the line's status field; never rewrite or delete.
+- **Gotchas:** recurrence suffix `(cited by: SPEC-a, SPEC-b)`. A SPEC that trips on the same gotcha ADDS its id; ≥3 SPECs → promotion candidate at close (see `docs/rules/lifecycle.md`).
+- **Current state (prose):** never edit concurrently. A closing SPEC APPENDS `### State delta (SPEC-<id>, date)` at the end of the section. Consolidating deltas into the canonical prose is **single writer**: a dedicated session with an owner (CODEOWNERS per feature is the natural candidate); consolidate when 3-5 deltas pile up — a legitimate maintenance-SPEC task.
+- **Size:** a living feature has no cap (unlimited features, not linted). If the L1 auto-load gets too heavy, the optional `rollup` moves the oldest content to `<area>.history.md` — move, never delete (R.5).
 
-## Lock leve de sessão
+## Light session lock
 
-1 SPEC = no máximo 1 sessão de ESCRITA por vez.
+1 SPEC = at most 1 WRITE session at a time.
 
-- Sessão de escrita cria `tmp/session.lock` na pasta da SPEC com o id da sessão por timestamp (ex.: `sessao-20260702-1530`). `tmp/` é gitignored — o lock nunca entra no repo.
-- Encontrou lock existente → NÃO escrever no journal; perguntar ao usuário (a outra sessão pode ter morrido; ele decide sobrescrever).
-- Sessão somente-leitura: dispensa lock e é PROIBIDA de tocar o journal.
-- Fim da sessão de escrita: remover o lock.
+- A write session creates `tmp/session.lock` in the SPEC folder with a timestamped session id (e.g. `session-20260702-1530`). `tmp/` is gitignored — the lock never enters the repo.
+- Found an existing lock → do NOT write to the journal; ask the user (the other session may have died; they decide whether to override).
+- A read-only session needs no lock and is FORBIDDEN from touching the journal.
+- End of the write session: remove the lock.
 
 ## Worktrees
 
-**1 worktree = 1 branch = 1 SPEC ativa.** `docs/active/` diverge entre worktrees por design (cada worktree enxerga só a própria SPEC). Nunca duas SPECs ativas no mesmo worktree (com >1 pasta em active/, o specctl exige escolha explícita); nunca a mesma SPEC em escrita em dois worktrees (o lock acima cobre).
+**1 worktree = 1 branch = 1 active SPEC.** `docs/active/` diverges between worktrees by design (each worktree sees only its own SPEC). Never two active SPECs in the same worktree (with >1 folder in active/, specctl requires an explicit choice); never the same SPEC being written in two worktrees (the lock above covers it).
 
 ## Onboarding
 
-**Trilha (nesta ordem, do panorama ao detalhe):**
+**Track (in this order, from overview to detail):**
 
-1. `docs/ARCHITECTURE.md` — mapa transversal região→feature
-2. `docs/CONSTITUTION.md` — princípios do projeto
-3. `docs/INDEX.md` — roteamento feature→arquivos
-4. `docs/features/<area>.md` das áreas em que vai trabalhar
-5. `docs/ARCHIVE-INDEX.md` filtrado pela área
-6. `digest.md` das SPECs relevantes do archive
+1. `docs/ARCHITECTURE.md` — cross-cutting region→feature map
+2. `docs/CONSTITUTION.md` — project principles
+3. `docs/INDEX.md` — feature→files routing
+4. `docs/features/<area>.md` for the areas you will work on
+5. `docs/ARCHIVE-INDEX.md` filtered by area
+6. `digest.md` of the relevant archived SPECs
 
-Custo: orientação global por poucos milhares de tokens, sem arqueologia de código.
+Cost: global orientation for a few thousand tokens, no code archaeology.
 
-**Tours guiados — `docs/tours/<persona>-<foco>.md`** (ex.: `novo-dev-checkout.md`, `revisor-auth.md`). Markdown puro, sem dependência de extensão/ferramenta. Cada passo segue **SMIG**:
+**Guided tours — `docs/tours/<persona>-<focus>.md`** (e.g. `new-dev-checkout.md`, `reviewer-auth.md`). Plain Markdown, no extension/tool dependency. Each step follows **SMIG**:
 
-- **Situação** — onde você está no fluxo e por que este passo existe
-- **Mecanismo** — como o código faz (com âncora `arquivo:linha`)
-- **Implicação** — o que isso impõe ao resto do sistema
-- **Gotcha** — o que morde quem mexe aqui
+- **Situation** — where you are in the flow and why this step exists
+- **Mechanism** — how the code does it (with a `file:line` anchor)
+- **Implication** — what it imposes on the rest of the system
+- **Gotcha** — what bites whoever touches it
 
-Âncoras `arquivo:linha` são VERIFICADAS ao escrever e re-verificadas a cada edição do tour. Âncora quebrada = passo desatualizado: corrigir ou remover, nunca deixar apodrecer. Tours têm arco narrativo (começo→fim de um fluxo real), não são lista solta de arquivos.
+`file:line` anchors are VERIFIED when writing and re-verified on every tour edit. Broken anchor = stale step: fix or remove, never let it rot. Tours have a narrative arc (start→end of a real flow), not a loose list of files.
 
-## Multi-repo — federação com camada de produto fina
+## Multi-repo
 
-Regra estrutural: **documentação de execução mora com o código** — o gate por diff do PR, a branch da SPEC e a sessão da IA são locais ao repo; repo-só-de-docs quebra a validação atômica código+docs. **Só coordenação e visão transversal sobem**, e a camada de produto é ~90% gerada ou manifesto — nunca a memória viva das SPECs.
+Structural rule: **execution docs live with the code** — the PR diff gate, the SPEC branch and the AI session are local to the repo; a docs-only repo breaks atomic code+docs validation. Each repo runs its own full v4 install. **Feature present on both sides** (e.g. checkout): each repo documents ITS side (`checkout-api` in back, `checkout-ui` in front). NEVER one feature file shared across repos — far from both codebases, it rots.
 
-**Camada de produto** (começa num repo-casa designado, ex.: o back; meta-repo dedicado só quando repos/times crescerem):
+**Product layer — not implemented by specctl (manual convention only).** specctl has no cross-repo support: the manifest key `"product": { "home": "<repo/path>", "repo_id": "<id>" }` is preserved but read by nothing, the brief shows no federated headline, there is no federated BOARD/INDEX, and prefixed program nodes (`back:SPEC-…`) are ignored (rules/programs.md). If you need coordination, keep it by hand in a designated home repo (e.g. back; a dedicated meta-repo only when repos/teams grow): product ARCHITECTURE (which repo owns what, flows between them), product CONSTITUTION (shared principles), and a hand-written list linking each repo's SPEC-ids — never the SPECs' living memory.
 
-- ARCHITECTURE do produto — mapa de repos: qual repo é dono de quê, fluxos entre eles
-- CONSTITUTION do produto — princípios compartilhados, herdados pelos por-repo
-- `programs/` cross-repo — 1 programa, 1 SPEC por repo, nós com prefixo `repo_id:` (ver `docs/rules/programs.md`)
-- BOARD federado — agregação dos `docs/claims/` (e PRs abertas) de todos os repos, gerado por automação do repo-casa: a visão de voo do produto
-- INDEX federado (opcional) — concatenação com namespace (`back/auth`, `front/checkout`)
-
-No manifesto de cada repo: `"product": { "home": "<repo/path>", "repo_id": "<id>" }`. O brief local puxa a headline federada quando configurado.
-
-**Feature que existe nos dois lados** (ex.: checkout): cada repo documenta o SEU lado (`checkout-api` no back, `checkout-ui` no front); o programa e a ARCHITECTURE do produto fazem o link. NUNCA um arquivo de feature compartilhado entre repos — longe dos dois códigos, apodrece.
-
-**Tabela de decisão:**
-
-| Cenário | Estrutura |
+| Scenario | Structure |
 |---|---|
-| 1 repo | v4 pura, sem camada de produto |
-| 2-5 repos, cross-repo ocasional | repo-casa designado |
-| Muitos repos/times, cross-repo frequente | meta-repo dedicado (pequeno: manifestos + gerados) |
-| Toda feature cruza tudo | o problema é o recorte de repos → considere monorepo (TAXONOMY por namespace cobre nativamente) |
+| 1 repo | pure v4, no product layer |
+| 2-5 repos, occasional cross-repo | designated home repo (manual) |
+| Many repos/teams, frequent cross-repo | dedicated meta-repo (small, manual) |
+| Every feature crosses everything | the repo split is the problem → consider a monorepo (TAXONOMY namespaces cover it natively) |
 
-Onboarding multi-repo: começa na ARCHITECTURE do produto e desce à trilha do repo.
+Multi-repo onboarding: start at the product ARCHITECTURE, then go down to the repo track.

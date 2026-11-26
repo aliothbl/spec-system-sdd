@@ -1,67 +1,67 @@
-# RULES — Sistema SPEC-driven v4 (núcleo)
+# RULES — SPEC-driven system v4 (core)
 
-Schema: sdd-4.0 · revisão do template: a do manifesto `docs/.spec-system.json` (fonte única). Detalhe operacional em `docs/rules/*.md` — ler SÓ no momento do uso (mapa no fim).
+Schema: sdd-4.0 · template revision: the one in the manifest `docs/.spec-system.json` (single source). Always loaded via the `@docs/RULES.md` import in CLAUDE.md. Operational detail in `docs/rules/*.md` — read ONLY when needed (map at the end).
 
-## Premissa
+## Premises
 
-1. Docs são para a IA reter contexto entre sessões: densos, imperativos, auto-contidos. Densidade > enxutidão; rollup, nunca corte.
-2. Única exceção: `main.md` de cada SPEC é o CONTRATO validado por humano (R.6.2).
-3. Contexto é ENTREGUE por hooks (brief/cápsula), não lido por ritual; regra sem mecanismo é bug.
+1. Docs exist so the AI keeps context across sessions: dense, imperative, self-contained. Density > brevity; roll up, never cut.
+2. Single exception: each SPEC's `main.md` is the human-validated CONTRACT (R.6.2).
+3. Context is DELIVERED by hooks (brief/capsule), not read by ritual; a rule without a mechanism is a bug.
 
-## Regras R.1–R.17 (com sub-regras 6.1/6.2)
+## Rules R.1–R.17 (with sub-rules 6.1/6.2)
 
-| R | Regra | Detalhe |
+| R | Rule | Detail |
 |---|---|---|
-| 1 | ID = `SPEC-YYYYMMDD-HHMM-slug`, timestamp real via `specctl new`; PROIBIDO sequencial/reuso | formats |
-| 2 | `docs/active/` SEMPRE vazio em `main` — gate no CI (`audit --main-gate`) | ci |
-| 3 | Canônicos: `main.md`+`journal.md`; `digest.md` no fechamento; opcionais de porte declarados | formats |
-| 4 | Toda SPEC vincula ≥1 feature, validada contra TAXONOMY.md | formats |
-| 5 | Ciclo de vida: NUNCA deletar; discard/pause preservam; exceção única: redação R.15 | lifecycle |
-| 6 | Timestamp `YYYY-MM-DD HH:MM` em TODA atualização (fonte: NOW injetado; ausência = ERRO) | formats |
-| 6.1 | Progresso em tempo real no main.md (QA/verify marcam critérios; nunca batch); todo artefato de trabalho tem contrapartida no journal | lifecycle |
-| 6.2 | Deferir/adiar/aceitar-incompleto/reduzir escopo SÓ com autorização explícita do usuário (citação; marcador `[aceito-incompleto]`) — nunca unilateral, em qualquer momento | lifecycle |
-| 7 | Features atualizadas ao arquivar, validadas por CONTEÚDO no diff do PR | lifecycle |
-| 8 | Isolamento: journal de outra SPEC e archive/ negados por hook; histórico via subagente/digest | retrieval |
-| 9 | Classificar todo prompt na 1ª linha da resposta: `[continuidade: SPEC-x]` \| `[nova]` \| `[livre]` | lifecycle |
-| 10 | Leitura livre com orçamentos (policy `strict` no manifesto reativa confirmação de N1) | context |
-| 11 | Ativação cria claim `docs/claims/SPEC-<id>.md`, visível em main | team |
-| 12 | Temporários em `tmp/` da SPEC ou `.scratch/`; evidência persistente em `evidence/` | formats |
-| 13 | Área existente na TAXONOMY = vínculo automático; área NOVA = confirmação do usuário | lifecycle |
-| 14 | Programa = manifesto único `docs/programs/<slug>.md`; Bloqueia/ordem são DERIVADOS | programs |
-| 15 | Segredo em docs/ PROIBIDO → `<REDACTED:tipo>`; secret-scan; exceção auditada ao append-only | verification |
-| 16 | Orçamentos lintados só nas camadas sempre-carregadas (CLAUDE/AGENTS/RULES) + digest; estourou → mova p/ camada mais profunda. INDEX (gerado) e features (memória viva, nº ilimitado) NÃO têm teto | context |
-| 17 | Commit sob SPEC ativa leva trailer `Spec: SPEC-<id>` | lifecycle |
+| 1 | ID = `SPEC-YYYYMMDD-HHMM-slug`, real timestamp via `specctl new`; sequential/reused IDs FORBIDDEN | formats |
+| 2 | `docs/active/` ALWAYS empty on `main` — CI gate (`audit --main-gate`) | ci |
+| 3 | Canonical: `main.md`+`journal.md`; `digest.md` at close; size-dependent optional files declared | formats |
+| 4 | Every SPEC links ≥1 feature, validated against TAXONOMY.md | formats |
+| 5 | Lifecycle: NEVER delete; discard/pause preserve; sole exception: R.15 redaction | lifecycle |
+| 6 | Timestamp `YYYY-MM-DD HH:MM` on EVERY update (source: injected NOW; missing = ERROR) | formats |
+| 6.1 | Real-time progress in main.md (QA/verify mark criteria; never batch); every work artifact has a journal counterpart | lifecycle |
+| 6.2 | Defer/postpone/accept incomplete/reduce scope ONLY with the user's explicit authorization (literal quote; `[accepted-incomplete]` marker) — never unilateral, at any time | lifecycle |
+| 7 | Features updated on archive, validated by CONTENT in the PR diff | lifecycle |
+| 8 | Isolation: other SPECs' journals and archive/ denied by hook; history via digest/ARCHIVE-INDEX | retrieval |
+| 9 | Classify every prompt on the answer's 1st line: `[continuation: SPEC-x]` \| `[new]` \| `[free]` (PT repos: `[continuidade: SPEC-x]` \| `[nova]` \| `[livre]`) | lifecycle |
+| 10 | Free reading within budgets (manifest policy `strict` re-enables L1 confirmation) | context |
+| 11 | Activation creates claim `docs/claims/SPEC-<id>.md`, visible on main | team |
+| 12 | Temp files in the SPEC's `tmp/` or `.scratch/`; persistent evidence in `evidence/` | formats |
+| 13 | Existing TAXONOMY area = automatic link; NEW area = user confirmation | lifecycle |
+| 14 | Program = single manifest `docs/programs/<slug>.md`; Blocks/order are DERIVED | programs |
+| 15 | Secrets in docs/ FORBIDDEN → `<REDACTED:type>`; secret-scan; audited exception to append-only | verification |
+| 16 | Budgets linted only on always-loaded layers (CLAUDE/AGENTS/RULES) + digest; over budget → move to a deeper layer. INDEX (generated) and features (living memory, unlimited count) have NO cap | context |
+| 17 | Commits under an active SPEC carry the trailer `Spec: SPEC-<id>` | lifecycle |
 
-> **R.6 · porte e evidência:** Porte P fecha critérios com timestamp+commit via `specctl check`; `verify:`/`evidence/` são ferramentas de M/G. Detalhe: rules/verification.md.
+> **R.6 · size and evidence:** Size S closes criteria with timestamp+commit via `specctl check`; `verify:`/`evidence/` are M/L tools. Detail: rules/verification.md.
 
-## Níveis de leitura (ordem recomendada + orçamento)
+## Read levels (recommended order + budget)
 
-| N | Fonte | Orçamento | Quando |
+| L | Source | Budget | When |
 |---|---|---|---|
-| 0 | brief (SessionStart) + cápsula (por prompt) | ~3k tok / 800 B | automático (hook) |
-| 0.5 | ARCHITECTURE.md, CONSTITUTION.md | ~1,8k tok | orientação transversal |
-| 1 | features/<area>.md + main.md da SPEC | sem teto (rollup opcional) | continuidade: auto-load |
-| 2 | journal.md — SNAPSHOT (60 primeiras linhas) antes do LOG | SNAPSHOT ≤60 linhas | retomada/detalhe |
-| 3 | archive/ e discard/ via subagente → digest | retorno ≤500 tok | raciocínio histórico |
+| 0 | brief (SessionStart) + capsule (per prompt) | ~3k tok / 800 B | automatic (hook) |
+| 0.5 | ARCHITECTURE.md, CONSTITUTION.md | ~1.8k tok | cross-cutting orientation |
+| 1 | features/<area>.md + the SPEC's main.md | no cap (optional rollup) | continuation: auto-load |
+| 2 | journal.md — SNAPSHOT (first 60 lines) before the LOG | SNAPSHOT ≤60 lines | resume/detail |
+| 3 | archive/ and discard/ → digest.md / ARCHIVE-INDEX first | summary ≤500 tok | historical reasoning |
 
-## Orçamentos por arquivo (R.16 — lint)
+## Per-file budgets (R.16 — lint)
 
-| Arquivo | Teto |
+| File | Cap |
 |---|---|
-| CLAUDE.md | 6.000 B · AGENTS.md 6.200 B |
-| docs/RULES.md (este) | 5.000 B |
-| digest.md | 2.000 B |
+| CLAUDE.md | 6,000 B · AGENTS.md 6,200 B |
+| docs/RULES.md (this) | 5,000 B |
+| digest.md | 2,000 B |
 
-`INDEX.md` (gerado, escala) e `features/<area>.md` (memória viva, nº ilimitado) **não têm teto**. `specctl rollup <area>` enxuga o auto-load N1 quando você quiser — opcional, nada bloqueia. Detalhe: rules/context.md.
+`INDEX.md` (generated, scales) and `features/<area>.md` (living memory, unlimited count) have **no cap**. `specctl rollup <area>` trims the L1 auto-load when you want — optional, nothing blocks. Detail: rules/context.md.
 
-## Quando ler o quê (docs/rules/)
+## When to read what (docs/rules/)
 
-- Criar/editar artefato (main, journal, digest, feature, prd, techspec, tasks, claim, programa, TAXONOMY, importação) → `formats.md`
-- Transição de estado: criação, ativação, fechamento, descarte, pausa, retomada, importar → `lifecycle.md`
-- Compactação, pressão de contexto, orçamento estourado → `context.md`
-- Histórico N3 (archive/discard) → `retrieval.md`
-- Verificação: `verify:`, gate build→test→secrets, graders → `verification.md`
-- Programa/DAG entre SPECs → `programs.md`
-- Time: claims, colisões, worktrees, onboarding → `team.md`
-- Harness prd / workspace externo → `interop.md`
-- Gates de CI → `ci.md`
+- Create/edit an artifact (main, journal, digest, feature, claim, program, TAXONOMY, import) → `formats.md`; prd/techspec/tasks → `formats-pipeline.md`
+- State transition: create, activate, close, discard, pause, resume, import → `lifecycle.md`
+- Compaction, context pressure, budget overrun → `context.md`
+- L3 history (archive/discard) → `retrieval.md`
+- Verification: `verify:`, build→test→secrets gate, graders → `verification.md`
+- Program/DAG across SPECs → `programs.md`
+- Team: claims, collisions, worktrees, onboarding → `team.md`
+- prd harness / external workspace → `interop.md`
+- CI gates → `ci.md`

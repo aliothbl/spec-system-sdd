@@ -1,139 +1,212 @@
-# Formatos literais (rules/formats.md)
+# Literal formats (rules/formats.md)
 
-> Ler ao criar/editar artefato. Campos/marcadores/ordem LITERAIS (`specctl lint` valida): `**Campo:**` inicia linha; timestamp `YYYY-MM-DD HH:MM` (NOW); paths `/`. Pipeline G: rules/formats-pipeline.md.
+> Read when creating/editing an artifact. Fields/markers/order are LITERAL (`specctl lint` validates): `**Field:**` starts the line; timestamp `YYYY-MM-DD HH:MM` (NOW); paths use `/`. Size L pipeline: rules/formats-pipeline.md.
 
-## 1. `main.md` — CONTRATO humano-validado
+## 1. `main.md` — human-validated CONTRACT
+
+Exactly what `specctl new` writes (EN repo):
 
 ```markdown
-# SPEC-<YYYYMMDD-HHMM>: <Título>
+# SPEC-<YYYYMMDD-HHMM>: <Title>
 
 **Status:** draft | active | paused | done | discarded
-**Porte:** P | M | G
+**Size:** S | M | L
 **Owner:** @handle
-**Criada:** YYYY-MM-DD HH:MM
+**Created:** YYYY-MM-DD HH:MM
+**Activated:** —
+**Completed:** —
+**Paused at:** —
+**Final commit:** —
 **Keywords:** a, b
 **Features:** feat-1, feat-2
-**Resumo:** 1 frase.
+**Branch:** —
+**Program:** —
+**Workspace:** —
+**Origin:** —
+**Summary:** 1 sentence.
 
-## Objetivo
-2-3 frases: o quê e por quê.
+## Goal
 
-## Escopo
-**DENTRO:**
-- item
+<2-3 sentences: what and why.>
 
-**FORA:**
-- item
+## Scope
 
-## Invariantes
-- SEMPRE/NUNCA <propriedade que vale antes/durante/depois>.  (linha-vermelha; ≠ critério de fim)
+**IN:**
+- <item>
 
-## Implementação
-abordagem em alto nível (G: detalhe fino em techspec.md).
-### Modelo de dados
-entidades/campos tocados; "—" se não há mudança de dados.
-<!-- Alternativas (M/G): abordagens rejeitadas + porquê; decisão irreversível = [irreversível] -->
+**OUT:**
+- <item>
 
-## Riscos
-- risco — mitigação: como.  (contrato ESTÁVEL; "—" se trivial)
+## Invariants
 
-## Sinais de sucesso
-- <resultado observável — cumpriu o PROPÓSITO, não só a corretude>.  (P: 1 linha)
+- ALWAYS/NEVER <property that holds before/during/after>.  (red line; ≠ end-state criterion)
 
-## Critério de aceite
-- [ ] Critério (gramática por porte — §2)
+## Implementation
+
+<high-level approach; size L: fine detail in techspec.md>
+
+### Data model
+
+| Entity | Fields / change |
+|---|---|
+| <Entity> | <fields> |
+
+<!-- Alternatives (M/L): approaches considered and REJECTED + why. Irreversible decision (one-way door): mark [irreversible]. -->
+
+## Risks
+
+- <risk> — mitigation: <how>.  (STABLE contract; "—" if trivial)
+
+## Success signals
+
+- <observable result — met the PURPOSE, not just correctness>.  (S: 1 line)
+
+## Acceptance criteria
+
+- [ ] <binary, verifiable criterion> | verify: `<command>`   (S scaffold: `- [ ] <criterion>` closed with `specctl check`)
 ```
 
-- Obrigatórios (lint): 7 campos + Objetivo, Escopo (DENTRO/FORA), `## Implementação`, Critério de aceite. **Sugeridas todo porte** (scaffold, não-lintadas): `## Invariantes` (SEMPRE/NUNCA — linhas-vermelhas que qualquer mudança futura pode violar), `### Modelo de dados`, `## Riscos`, `## Sinais de sucesso` (resultado/valor, não só corretude), e o hint `Alternativas` (rejeitadas + porquê; `[irreversível]` = porta de mão-única). Tudo CONTRATO estável. NÃO ponha Plano/Decisão/progresso no main — fases vão no SNAPSHOT, decisões no LOG `[decisão]`; aqui duplicaria. `specctl new` cria os campos, transições preenchem, `—`=vazio. Ponteiros: formats-pipeline.md.
+- Required (lint): 7 fields (Status, Size, Owner, Created, Keywords, Features, Summary) + Goal, Scope (IN/OUT), `## Implementation`, Acceptance criteria. **Suggested at every size** (scaffolded, not linted): `## Invariants` (ALWAYS/NEVER — red lines any future change could break), `### Data model`, `## Risks`, `## Success signals` (outcome/value, not only correctness), and the `Alternatives` hint (rejected + why; `[irreversible]` = one-way door). All of it is STABLE contract. Do NOT put plan/decisions/progress in main — phases go in the SNAPSHOT, decisions in LOG `[decision]`; here they would duplicate. `specctl new` creates the fields, transitions fill them, `—` = empty. Pipeline pointers: formats-pipeline.md.
 
-## 2. Critério de aceite — gramática POR PORTE
+## 2. Acceptance criteria — grammar BY SIZE
 
 ```markdown
-- [ ] <texto> ← P: specctl check <id> <n>
-- [ ] <texto> (cobre RF-3) | verify: `<cmd>` ← M/G: specctl verify <id>
-- [ ] <texto> | evidence: manual @usuario ← grader humano
-- [x] <texto> (2026-07-02 15:30, commit `abc1234`, verify: exit 0)
-- [ ] <texto> [aceito-incompleto: "<citação literal do usuário>" 2026-07-02 15:30]
+- [ ] <text> ← S: specctl check <id> <n>
+- [ ] <text> (covers FR-3) | verify: `<cmd>` ← M/L: specctl verify <id>
+- [ ] <text> | evidence: manual @user ← human grader (stamped with specctl check <id> <n> --evidence "...")
+- [x] <text> (2026-07-02 15:30, commit `abc1234`, verify: exit 0)
+- [ ] <text> [accepted-incomplete: "<user's literal quote>" 2026-07-02 15:30]
 ```
 
-- `[x]` gravado pela FERRAMENTA (`check`/`verify`) — "verify: exit 0" à mão = spoofing.
-- `(cobre RF-n)` obrigatório quando `prd.md` existe (lint valida cobertura).
-- `[x]` sem timestamp = ERRO; sem evidência = ERRO em archive. `[aceito-incompleto: ...]` = única forma de arquivar com `[ ]` (R.6.2 — rules/lifecycle.md).
+- `[x]` is written ONLY by the tool (`check`/`verify`). Ticking a criterion by hand — or typing "verify: exit 0" — is spoofing.
+- `(covers FR-n)` is required when `prd.md` exists (lint validates coverage).
+- `[x]` without timestamp = ERROR; without evidence = ERROR at archive. `[accepted-incomplete: ...]` is the only way to close with `[ ]` (R.6.2 — rules/lifecycle.md).
 
 ## 3. `journal.md`
 
 ```markdown
 # Journal — SPEC-<YYYYMMDD-HHMM>
 
-## SNAPSHOT (sobrescrever — cabe nas 60 primeiras linhas)
-**Última atualização / Onde tô / Próximo passo / Última decisão / Bloqueio atual / Se retomar, ler:** (1 linha cada)
-### Fases — tabela: # | Descrição | Status | Atualizado
-### Fatos confirmados / Inferências prováveis / Dúvidas em aberto — anti-alucinação: separe SABIDO de CHUTE de EM-ABERTO; nunca trate inferência como fato
-### Respostas-chave · ### Tentativas que falharam · ### Arquivos tocados · ### Onde parei · ### Sessões (máx 5 + 1 agregada)
+## SNAPSHOT (overwrite — MUST fit in the first 60 lines of the file)
 
-## LOG (append-only — NUNCA editar entradas antigas)
-## YYYY-MM-DD HH:MM — [tipo] Título
-Corpo livre.
+**Last updated:** YYYY-MM-DD HH:MM
+**Where I am:** <1 line>
+**Next step:** <1 line>
+**Last decision:** —
+**Current blocker:** none
+**On resume, read:** this SPEC's main.md
+
+### Phases
+| # | Description | Status | Updated |
+|---|---|---|---|
+| 1 | <phase> | pending | YYYY-MM-DD HH:MM |
+
+### Confirmed facts / Likely inferences / Open questions
+- fact:
+- inference:
+- question:
+
+### Key user answers
+### Failed attempts
+### Files touched
+### Where I stopped
+### Sessions (max 5 lines + 1 aggregate)
+
+## LOG (append-only — NEVER edit old entries)
+## YYYY-MM-DD HH:MM — [type] Title
+Free body.
 ```
 
-- **Entrada nova no LOG = `specctl log <id> <tipo> "título" [--stdin|--body-file <f>]`** — nunca Edit direto (ferramenta appenda ⎿ commit+diffstat). SNAPSHOT = Edit direto.
-- Tipos: `ativação|descoberta|decisão|tentativa|blocker|unblock|refactor|nota|conclusão` (`[MARCO]` p/ crítica) · Fase: `pendente|em progresso|concluído|bloqueado|importada (origem)|descartado`.
-- Lint: SNAPSHOT único no topo; TL;DR fora = erro. Citações LITERAIS (R.15).
+- **New LOG entry = `specctl log <id> <type> "title" [--stdin|--body-file <f>]`** — never a direct Edit (the tool appends ⎿ commit+diffstat). SNAPSHOT = direct Edit.
+- Types: `activation|discovery|decision|attempt|blocker|unblock|refactor|note|completion` (`[MILESTONE]` prefix for critical ones) · Phase status: `pending|in progress|done|blocked|imported (origin)|discarded`.
+- Anti-hallucination: separate KNOWN (verified) from GUESS (inferred) from OPEN; never treat an inference as a fact.
+- Lint: one SNAPSHOT at the top; TL;DR outside it = error. LITERAL quotes (R.15).
 
-## 4. `digest.md` — ≤2.000B, GERADO pela ferramenta
+## 4. `digest.md` — ≤2,000 B, GENERATED by the tool
 
-archive E discard exigem; `close` gera (NUNCA conte bytes). Refino: `specctl digest <id> --stdin|--file` (re-validado; LF, HTML descontado).
+Required by archive AND discard; `close` generates it (NEVER count bytes). Refine: `specctl digest <id> --stdin|--file` (re-validated; LF, HTML comments not counted).
 
 ## 5. `features/<area>.md`
 
 ```markdown
-# Feature: <nome-kebab-case>
+# Feature: <kebab-case-name>
 
 **Keywords:** a, b
-**Arquivos principais:**
+**Main files:**
   - path/a.ts
-**Resumo:** 1 frase densa.
+**Summary:** 1 dense sentence.
 
-## Specs desta feature
-### Concluídas
-- SPEC-<id> | YYYY-MM-DD | `hash` | Título
-### Planejadas (future/)
-- SPEC-<id> | Título | Motivo
+## Specs for this feature
+### Completed
+- SPEC-<id> | YYYY-MM-DD | `hash` | Title
+### Planned (future/)
+- SPEC-<id> | Title | Reason
 
-## Estado atual
-Prosa consolidada (single-writer); SPECs APENDAM
-### Delta de estado (SPEC-<id>, ts)
+## Current state
+Consolidated prose (single writer); SPECs APPEND
+### State delta (SPEC-<id>, ts)
 
-## Decisões arquiteturais ativas
-- DEC-YYYYMMDD-HHMM-slug [ativa | obsoleta → DEC-x | substituída por SPEC-y] (SPEC-<id>) — decisão + trade-off.
+## Active architectural decisions
+- DEC-YYYYMMDD-HHMM-slug [active | obsolete → DEC-x | superseded by SPEC-y] (SPEC-<id>) — decision + trade-off.
 
-## Alternativas consideradas e rejeitadas
-- SPEC-<id> | alternativa — rejeitada em <ts>. Motivo.
+## Alternatives considered and rejected
+- SPEC-<id> | alternative — rejected at <ts>. Reason.
 
 ## Gotchas
-- SPEC-<id> | armadilha (<ts>) — como evitar. (citado por: SPEC-a)
+- SPEC-<id> | trap (<ts>) — how to avoid. (cited by: SPEC-a)
 ```
 
-- Voo → `docs/claims/` (R.11), sem "Em execução" aqui. Seções compartilhadas: line-oriented (linha inicia por SPEC-/DEC-id), NUNCA reordenar. DEC-id ÚNICO no repo.
-- Gotcha repetido: apendar `(citado por: ...)`; ≥3 SPECs → promoção (lifecycle).
-- Sem teto: nº de features ilimitado, memória viva cresce livre. `specctl rollup <area>` (MANUAL/opcional) enxuga o auto-load N1 movendo blocos antigos → `<area>.history.md`, nunca deletado. Nada é lintado nem bloqueado por tamanho.
+- In-flight work → `docs/claims/` (R.11), no "In progress" section here. Shared sections are line-oriented (line starts with SPEC-/DEC-id), NEVER reorder. DEC-id UNIQUE in the repo.
+- Repeated gotcha: append `(cited by: ...)`; ≥3 SPECs → promotion (lifecycle).
+- No cap: unlimited features, living memory grows freely. `specctl rollup <area>` (MANUAL/optional) trims the L1 auto-load by moving old blocks → `<area>.history.md`, never deleted. Nothing is linted or blocked by size.
 
 ## 6. `docs/claims/SPEC-<id>.md`
 
-specctl gere (activate cria; archive/discard/pause removem); campos SPEC/Título/Owner/Branch/**Base** (branch de origem — o menu de finalização do close usa)/Features/Ativada; vive em MAIN.
+Managed by specctl (activate creates; archive/discard/pause remove). Lives in MAIN:
+
+```markdown
+# Claim — SPEC-<id>
+
+**SPEC:** SPEC-<id>
+**Title:** <title>
+**Owner:** @handle
+**Branch:** feature/<slug>
+**Base:** main
+**Features:** a, b
+**Activated at:** YYYY-MM-DD HH:MM
+```
+
+`**Base:**` = origin branch; the close finishing menu uses it.
 
 ## 7. `docs/programs/<slug>.md`
 
-`# Programa: <slug>` + `**Owner:**` + 1 linha/nó `- SPEC-<id> | depende de: —|SPEC-<id2>`. `Bloqueia`/ordem: DERIVADOS, NUNCA escritos. Detalhe: rules/programs.md.
+`# Program: <slug>` + `**Owner:**` + 1 line/node `- SPEC-<id> | depends on: —|SPEC-<id2>`. `Blocks`/order: DERIVED, NEVER written. Details: rules/programs.md.
 
 ## 8. `docs/TAXONOMY.md`
 
-`- <area> — definição em 1 linha`; namespaces com `/` (back/auth). Toda feature na TAXONOMY (lint); área NOVA = usuário confirma (R.13).
+`- <area> — 1-line definition`; namespaces with `/` (back/auth). Every feature in the TAXONOMY (lint); NEW area = user confirms (R.13).
 
-## 9. Artefatos de porte
+## 9. Size artifacts
 
-Só G com pipeline: `prd.md`(+RF-N), `techspec.md`, `tasks.md`/`NN_task.md`, `bugs.md`, `qa|review|bugfix-report.md`, `evidence/`, `intake/`, `tmp/` (R.12). Templates+semântica: **rules/formats-pipeline.md**.
+Size L with pipeline only: `prd.md` (+FR-N), `techspec.md`, `tasks.md`/`NN_task.md`, `bugs.md`, `qa|review|bugfix-report.md`, `evidence/`, `intake/`, `tmp/` (R.12). Templates + semantics: **rules/formats-pipeline.md**.
 
-## 10. Importação
+## 10. Import
 
-Verbatim em `intake/`; `prd.md` normalizado `**Origem:** importado (time X, data, vN)`; fase externa → `importada (time X)`. Fluxo: rules/lifecycle.md.
+Verbatim in `intake/`; normalized `prd.md` with `**Origin:** imported (team X, date, vN)`; external phase → `imported (team X)`. Flow: rules/lifecycle.md.
+
+## 11. PT aliases (still accepted)
+
+Repos with manifest `"lang"` absent or `"pt"` are written in PT; the CLI reads both forms everywhere.
+
+| EN | PT alias |
+|---|---|
+| `**Size:**` S/M/L | `**Porte:**` P/M/G |
+| `**Created:**` `**Activated:**` `**Completed:**` `**Paused at:**` `**Resumed at:**` `**Reopened at:**` | `**Criada:**` `**Ativada:**` `**Concluída:**` `**Pausada em:**` `**Reativada em:**` `**Reaberta em:**` |
+| `**Final commit:**` `**Program:**` `**Origin:**` `**Summary:**` · claim `**Title:**` `**Activated at:**` | `**Commit final:**` `**Programa:**` `**Origem:**` `**Resumo:**` · `**Título:**` `**Ativada em:**` |
+| `**IN:**` `**OUT:**` · `## Goal` `## Scope` `## Invariants` `## Implementation` `### Data model` `## Risks` `## Success signals` `## Acceptance criteria` `## Discard rationale` | `**DENTRO:**` `**FORA:**` · `## Objetivo` `## Escopo` `## Invariantes` `## Implementação` `### Modelo de dados` `## Riscos` `## Sinais de sucesso` `## Critério de aceite` `## Justificativa de descarte` |
+| SNAPSHOT `**Last updated:**` `**Where I am:**` `**Next step:**` `**Last decision:**` `**Current blocker:**` `**On resume, read:**` · `### Phases` | `**Última atualização:**` `**Onde tô:**` `**Próximo passo:**` `**Última decisão:**` `**Bloqueio atual:**` `**Se retomar, ler:**` · `### Fases` |
+| LOG types `activation discovery decision attempt note completion` · `[MILESTONE]` | `ativação descoberta decisão tentativa nota conclusão` · `[MARCO]` |
+| `[accepted-incomplete: "…" ts]` · `(covers FR-n)` | `[aceito-incompleto: "…" ts]` · `(cobre RF-n)` |
+| feature `**Main files:**` `## Specs for this feature` `### Completed` `### Planned (future/)` `## Current state` `### State delta` `## Active architectural decisions` `## Alternatives considered and rejected` | `**Arquivos principais:**` `## Specs desta feature` `### Concluídas` `### Planejadas (future/)` `## Estado atual` `### Delta de estado` `## Decisões arquiteturais ativas` `## Alternativas consideradas e rejeitadas` |
+| program `depends on:` / forbidden `Blocks` | `depende de:` / `Bloqueia` |
+| `> GENERATED — specctl index — DO NOT EDIT` | `> GERADO — specctl index — NÃO EDITAR` |
